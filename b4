@@ -1,0 +1,189 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+
+--[[----------------------------------------------------------------------------------------------------------
+                                        VARIABLES GLOBALES Y DE ESTADO
+----------------------------------------------------------------------------------------------------------]]
+
+-- Variables del ESP
+local ESPConnection
+local ESPSettings = {
+    Innocent = {chams = false, tracer = false, box = false},
+    Sheriff = {chams = false, tracer = false, box = false},
+    Murder = {chams = false, tracer = false, box = false}
+}
+local TracerLines = {}
+local BoxESP = {}
+
+-- Variables del Speed Glitch
+local speedGlitchConnection
+local speedGlitchEnabled = false
+local speedGlitchValue = 16 
+local originalWalkSpeed = nil
+
+-- Referencias a los botones de la GUI para sincronización
+local internalSpeedToggleButton 
+local speedGlitchDraggableButton
+
+--[[----------------------------------------------------------------------------------------------------------
+                                        LÓGICA DE FUNCIONALIDADES
+----------------------------------------------------------------------------------------------------------]]
+-- (Funciones de lógica sin cambios)
+local function CleanupPlayerESP(playerName) if TracerLines[playerName] then TracerLines[playerName]:Remove(); TracerLines[playerName] = nil; end; if BoxESP[playerName] then for _, line in pairs(BoxESP[playerName]) do if line and line.Remove then line:Remove() end end; BoxESP[playerName] = nil; end end
+Players.PlayerRemoving:Connect(function(player) CleanupPlayerESP(player.Name) end)
+local function GetRoleColor(role) if role == "Sheriff" then return Color3.fromRGB(0, 0, 255) elseif role == "Murder" then return Color3.fromRGB(255, 0, 0) else return Color3.fromRGB(0, 255, 0) end end
+local function CreateChams(player, color) if not player.Character then return end; local humanoid = player.Character:FindFirstChild("Humanoid"); if not humanoid or humanoid.Health <= 0 then if player.Character:FindFirstChild("ESP_Highlight") then player.Character.ESP_Highlight:Destroy() end; return end; local highlight = player.Character:FindFirstChild("ESP_Highlight") or Instance.new("Highlight"); highlight.Name = "ESP_Highlight"; highlight.Parent = player.Character; highlight.Adornee = player.Character; highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop; highlight.FillColor = color; if color == Color3.fromRGB(255, 0, 0) then highlight.OutlineColor = Color3.fromRGB(255, 100, 100); highlight.FillTransparency = 0.2 elseif color == Color3.fromRGB(0, 0, 255) then highlight.OutlineColor = Color3.fromRGB(100, 100, 255); highlight.FillTransparency = 0.25 else highlight.OutlineColor = Color3.fromRGB(100, 255, 100); highlight.FillTransparency = 0.35 end end
+local function CreateTracer(player, color) if not player or not Players:FindFirstChild(player.Name) then if TracerLines[player.Name] then TracerLines[player.Name]:Remove(); TracerLines[player.Name] = nil; end; return end; if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") or player.Character.Humanoid.Health <= 0 then if TracerLines[player.Name] then TracerLines[player.Name].Visible = false; end; return end; local rootPart = player.Character.HumanoidRootPart; local line = TracerLines[player.Name] or Drawing.new("Line"); TracerLines[player.Name] = line; local camera = workspace.CurrentCamera; local rootPosition, onScreen = camera:WorldToViewportPoint(rootPart.Position); if onScreen and rootPosition.Z > 0 then line.From = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y); line.To = Vector2.new(rootPosition.X, rootPosition.Y); line.Color = color; line.Thickness = 2; line.Transparency = 1; line.Visible = true else line.Visible = false end end
+local function CreateBox(player, color) if not player or not Players:FindFirstChild(player.Name) then if BoxESP[player.Name] then for _, l in pairs(BoxESP[player.Name]) do l:Remove() end; BoxESP[player.Name] = nil; end; return end; if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") or player.Character.Humanoid.Health <= 0 then if BoxESP[player.Name] then for _, l in pairs(BoxESP[player.Name]) do l.Visible = false end end; return end; local box = BoxESP[player.Name]; if not box then box = {topSide=Drawing.new("Line"),bottomSide=Drawing.new("Line"),leftSide=Drawing.new("Line"),rightSide=Drawing.new("Line")}; BoxESP[player.Name] = box end; local camera = workspace.CurrentCamera; local rootPart = player.Character.HumanoidRootPart; local rootPos, onScreen = camera:WorldToViewportPoint(rootPart.Position); if onScreen and rootPos.Z > 0 then local headPos = camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, 2, 0)); local legPos = camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, -3, 0)); local height = math.abs(headPos.Y - legPos.Y); local width = height * 0.6; local x1, x2, y1, y2 = rootPos.X - width/2, rootPos.X + width/2, headPos.Y, legPos.Y; local lines = {{box.topSide, Vector2.new(x1, y1), Vector2.new(x2, y1)}, {box.bottomSide, Vector2.new(x1, y2), Vector2.new(x2, y2)}, {box.leftSide, Vector2.new(x1, y1), Vector2.new(x1, y2)}, {box.rightSide, Vector2.new(x2, y1), Vector2.new(x2, y2)}}; for _, d in pairs(lines) do local l, f, t = d[1], d[2], d[3]; l.From, l.To, l.Color, l.Thickness, l.Transparency, l.Visible = f, t, color, 2, 1, true end else for _, l in pairs(box) do if l then l.Visible = false end end end end
+local function RemoveESP(player) if player.Character and player.Character:FindFirstChild("ESP_Highlight") then player.Character.ESP_Highlight:Destroy() end; if TracerLines[player.Name] then TracerLines[player.Name]:Remove(); TracerLines[player.Name] = nil end; if BoxESP[player.Name] then for _, line in pairs(BoxESP[player.Name]) do line:Remove() end; BoxESP[player.Name] = nil end end
+local function DetectRole(player) local function hasTool(name) return (player.Backpack:FindFirstChild(name) or (player.Character and player.Character:FindFirstChild(name))) end; if hasTool("Gun") or hasTool("IsGun") then return "Sheriff" elseif hasTool("Knife") then return "Murder" else return "Innocent" end end
+local function ToggleESP() if ESPConnection then ESPConnection:Disconnect(); ESPConnection = nil; end; for _, player in pairs(Players:GetPlayers()) do RemoveESP(player) end; for playerName in pairs(TracerLines) do if not Players:FindFirstChild(playerName) then CleanupPlayerESP(playerName) end end; for playerName in pairs(BoxESP) do if not Players:FindFirstChild(playerName) then CleanupPlayerESP(playerName) end end; local anyEnabled = false; for _, settings in pairs(ESPSettings) do for _, enabled in pairs(settings) do if enabled then anyEnabled = true; break; end end if anyEnabled then break; end end; if anyEnabled then ESPConnection = RunService.Heartbeat:Connect(function() for _, player in pairs(Players:GetPlayers()) do if player ~= LocalPlayer and player.Character then local role = DetectRole(player); local color = GetRoleColor(role); if ESPSettings[role] then if ESPSettings[role].chams then CreateChams(player, color) else if player.Character:FindFirstChild("ESP_Highlight") then player.Character.ESP_Highlight:Destroy() end end; if ESPSettings[role].tracer then CreateTracer(player, color) elseif TracerLines[player.Name] then TracerLines[player.Name].Visible = false end; if ESPSettings[role].box then CreateBox(player, color) elseif BoxESP[player.Name] then for _, l in pairs(BoxESP[player.Name]) do l.Visible = false end end else RemoveESP(player) end end end end) end end
+local function UpdateSpeedGlitch() local char = LocalPlayer.Character; if not char or not char:FindFirstChild("Humanoid") then return end; local humanoid = char.Humanoid; local onGround = humanoid:GetState() == Enum.HumanoidStateType.Running or humanoid:GetState() == Enum.HumanoidStateType.Landed; local isMoving = humanoid.MoveDirection.Magnitude > 0; if not onGround and isMoving then if not originalWalkSpeed then originalWalkSpeed = humanoid.WalkSpeed end; humanoid.WalkSpeed = speedGlitchValue else if originalWalkSpeed then humanoid.WalkSpeed = originalWalkSpeed; originalWalkSpeed = nil; end end end
+
+local function SetSpeedGlitchState(enabled)
+    speedGlitchEnabled = enabled
+    if speedGlitchEnabled then
+        if not speedGlitchConnection then speedGlitchConnection = RunService.Heartbeat:Connect(UpdateSpeedGlitch) end
+    else
+        if speedGlitchConnection then speedGlitchConnection:Disconnect(); speedGlitchConnection = nil; end
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") and originalWalkSpeed then
+            LocalPlayer.Character.Humanoid.WalkSpeed = originalWalkSpeed; originalWalkSpeed = nil
+        end
+    end
+    local color = enabled and Color3.fromRGB(85, 170, 85) or Color3.fromRGB(170, 85, 85)
+    local text = enabled and "ON" or "OFF"
+    if internalSpeedToggleButton then internalSpeedToggleButton.BackgroundColor3 = color; internalSpeedToggleButton.Text = text; end
+    if speedGlitchDraggableButton then speedGlitchDraggableButton.BackgroundColor3 = color; end
+end
+
+--[[----------------------------------------------------------------------------------------------------------
+                                        CREACIÓN DE LA INTERFAZ (GUI)
+----------------------------------------------------------------------------------------------------------]]
+
+local function MakeDraggable(guiObject)
+    local dragging, dragStart, startPos = false, nil, nil
+    guiObject.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging, dragStart, startPos = true, input.Position, guiObject.Position; end end)
+    guiObject.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false; end end)
+    UserInputService.InputChanged:Connect(function(input) if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then local delta = input.Position - dragStart; guiObject.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y); end end)
+end
+
+if LocalPlayer.PlayerGui:FindFirstChild("MurderMysteryGUI") then LocalPlayer.PlayerGui.MurderMysteryGUI:Destroy() end
+
+local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+ScreenGui.Name = "MurderMysteryGUI"; ScreenGui.ResetOnSpawn = false; ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Name = "MainFrame"; MainFrame.Size = UDim2.new(0, 350, 0, 250); MainFrame.Position = UDim2.new(0.5, -175, 0.5, -125); MainFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45); MainFrame.BorderSizePixel = 0; MainFrame.Visible = true
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+
+local TitleBar = Instance.new("Frame", MainFrame)
+TitleBar.Name = "TitleBar"; TitleBar.Size = UDim2.new(1, 0, 0, 30); TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 35); TitleBar.Active = true
+Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 8)
+MakeDraggable(TitleBar)
+
+local TitleLabel = Instance.new("TextLabel", TitleBar)
+TitleLabel.Size = UDim2.new(1, -80, 1, 0); TitleLabel.Position = UDim2.new(0, 10, 0, 0); TitleLabel.BackgroundTransparency = 1; TitleLabel.Text = "Murder Mystery GUI"; TitleLabel.TextColor3 = Color3.new(1, 1, 1); TitleLabel.TextScaled = true; TitleLabel.Font = Enum.Font.GothamBold
+
+local CloseButton = Instance.new("TextButton", TitleBar)
+CloseButton.Size = UDim2.new(0, 25, 0, 25); CloseButton.Position = UDim2.new(1, -30, 0, 2.5); CloseButton.BackgroundColor3 = Color3.fromRGB(255, 85, 85); CloseButton.Text = "X"; CloseButton.TextColor3 = Color3.new(1, 1, 1); CloseButton.TextScaled = true; CloseButton.Font = Enum.Font.GothamBold
+Instance.new("UICorner", CloseButton).CornerRadius = UDim.new(0, 4)
+
+local MinimizeButton = Instance.new("TextButton", TitleBar)
+MinimizeButton.Size = UDim2.new(0, 25, 0, 25); MinimizeButton.Position = UDim2.new(1, -60, 0, 2.5); MinimizeButton.BackgroundColor3 = Color3.fromRGB(85, 135, 255); MinimizeButton.Text = "-"; MinimizeButton.TextColor3 = Color3.new(1, 1, 1); MinimizeButton.TextScaled = true; MinimizeButton.Font = Enum.Font.GothamBold
+Instance.new("UICorner", MinimizeButton).CornerRadius = UDim.new(0, 4)
+
+local ShowGuiButton = Instance.new("TextButton", ScreenGui)
+ShowGuiButton.Name = "ShowGuiButton"; ShowGuiButton.Size = UDim2.new(0, 80, 0, 40); ShowGuiButton.Position = UDim2.new(0, 10, 0, 10); ShowGuiButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60); ShowGuiButton.Text = "GUI"; ShowGuiButton.TextColor3 = Color3.new(1, 1, 1); ShowGuiButton.Font = Enum.Font.GothamBold; ShowGuiButton.Visible = false
+Instance.new("UICorner", ShowGuiButton).CornerRadius = UDim.new(0, 8)
+MakeDraggable(ShowGuiButton)
+
+MinimizeButton.MouseButton1Click:Connect(function() MainFrame.Visible = false; ShowGuiButton.Visible = true; ShowGuiButton.Position = MainFrame.Position; end)
+ShowGuiButton.MouseButton1Click:Connect(function() MainFrame.Visible = true; ShowGuiButton.Visible = false; end)
+
+speedGlitchDraggableButton = Instance.new("TextButton", ScreenGui)
+speedGlitchDraggableButton.Name = "SpeedGlitchButton"; speedGlitchDraggableButton.Size = UDim2.new(0, 80, 0, 80); speedGlitchDraggableButton.Position = UDim2.new(0, 20, 1, -100); speedGlitchDraggableButton.BackgroundColor3 = Color3.fromRGB(170, 85, 85); speedGlitchDraggableButton.Text = "Speed Glitch"; speedGlitchDraggableButton.TextColor3 = Color3.new(1, 1, 1); speedGlitchDraggableButton.TextScaled = true; speedGlitchDraggableButton.Font = Enum.Font.GothamBold
+Instance.new("UICorner", speedGlitchDraggableButton).CornerRadius = UDim.new(1, 0)
+MakeDraggable(speedGlitchDraggableButton)
+speedGlitchDraggableButton.MouseButton1Click:Connect(function() SetSpeedGlitchState(not speedGlitchEnabled) end)
+
+local TabFrame = Instance.new("Frame", MainFrame)
+TabFrame.Size = UDim2.new(1, 0, 0, 35); TabFrame.Position = UDim2.new(0, 0, 0, 30); TabFrame.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+
+local ContentFrame = Instance.new("Frame", MainFrame)
+ContentFrame.Size = UDim2.new(1, 0, 1, -65); ContentFrame.Position = UDim2.new(0, 0, 0, 65); ContentFrame.BackgroundTransparency = 1
+
+local currentTab, tabs, tabButtons, tabContents = "Visual", {"Visual", "Combat", "Main"}, {}, {}
+for i, tabName in ipairs(tabs) do
+    local b = Instance.new("TextButton", TabFrame)
+    b.Size = UDim2.new(1/3, -2, 1, -4); b.Position = UDim2.new((i-1)/3, 1, 0, 2); b.BackgroundColor3 = tabName == currentTab and Color3.fromRGB(75, 75, 75) or Color3.fromRGB(65, 65, 65); b.Text = tabName; b.TextColor3 = Color3.new(1, 1, 1); b.TextScaled = true; b.Font = Enum.Font.Gotham
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
+    tabButtons[tabName] = b
+end
+for _, tabName in ipairs(tabs) do
+    local c = Instance.new("ScrollingFrame", ContentFrame)
+    c.Size = UDim2.new(1, -10, 1, -10); c.Position = UDim2.new(0, 5, 0, 5); c.BackgroundTransparency = 1; c.ScrollBarThickness = 4; c.ScrollBarImageColor3 = Color3.fromRGB(75, 75, 75); c.CanvasSize = UDim2.new(0, 0, 0, 300); c.Visible = tabName == currentTab
+    tabContents[tabName] = c
+end
+local function SwitchTab(tabName) currentTab = tabName; for n, b in pairs(tabButtons) do b.BackgroundColor3 = n == tabName and Color3.fromRGB(75, 75, 75) or Color3.fromRGB(65, 65, 65) end; for n, c in pairs(tabContents) do c.Visible = n == tabName end end
+for tabName, button in pairs(tabButtons) do button.MouseButton1Click:Connect(function() SwitchTab(tabName) end) end
+
+local function CreateToggleButton(parent, text, defaultState, callback)
+    local ToggleFrame = Instance.new("Frame", parent); ToggleFrame.Size = UDim2.new(1, 0, 0, 25); ToggleFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 60); Instance.new("UICorner", ToggleFrame).CornerRadius = UDim.new(0, 4)
+    local Label = Instance.new("TextLabel", ToggleFrame); Label.Size = UDim2.new(1, -50, 1, 0); Label.Position = UDim2.new(0, 5, 0, 0); Label.BackgroundTransparency = 1; Label.Text = text; Label.TextColor3 = Color3.new(1, 1, 1); Label.TextXAlignment = Enum.TextXAlignment.Left; Label.TextScaled = true; Label.Font = Enum.Font.Gotham
+    local ToggleButton = Instance.new("TextButton", ToggleFrame); ToggleButton.Size = UDim2.new(0, 40, 0, 18); ToggleButton.Position = UDim2.new(1, -43, 0.5, -9); ToggleButton.BackgroundColor3 = defaultState and Color3.fromRGB(85, 170, 85) or Color3.fromRGB(170, 85, 85); ToggleButton.Text = defaultState and "ON" or "OFF"; ToggleButton.TextColor3 = Color3.new(1, 1, 1); ToggleButton.TextScaled = true; ToggleButton.Font = Enum.Font.GothamBold; Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(0, 3)
+    local isToggled = defaultState
+    ToggleButton.MouseButton1Click:Connect(function() isToggled = not isToggled; ToggleButton.BackgroundColor3 = isToggled and Color3.fromRGB(85, 170, 85) or Color3.fromRGB(170, 85, 85); ToggleButton.Text = isToggled and "ON" or "OFF"; callback(isToggled); end)
+    return ToggleFrame, ToggleButton
+end
+local function CreateSlider(parent, text, min, max, default, callback)
+    local SliderFrame = Instance.new("Frame", parent); SliderFrame.Size = UDim2.new(1, 0, 0, 40); SliderFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 60); Instance.new("UICorner", SliderFrame).CornerRadius = UDim.new(0, 4)
+    local Label = Instance.new("TextLabel", SliderFrame); Label.Size = UDim2.new(0.7, 0, 0, 15); Label.Position = UDim2.new(0.02, 0, 0, 0); Label.BackgroundTransparency = 1; Label.TextColor3 = Color3.new(1, 1, 1); Label.TextXAlignment = Enum.TextXAlignment.Left; Label.Font = Enum.Font.Gotham; Label.Text = text
+    local ValueLabel = Instance.new("TextLabel", SliderFrame); ValueLabel.Size = UDim2.new(0.3, -5, 0, 15); ValueLabel.Position = UDim2.new(0.7, 0, 0, 0); ValueLabel.BackgroundTransparency = 1; ValueLabel.TextColor3 = Color3.new(1, 1, 1); ValueLabel.TextXAlignment = Enum.TextXAlignment.Right; ValueLabel.Font = Enum.Font.GothamBold
+    local Track = Instance.new("Frame", SliderFrame); Track.Size = UDim2.new(1, -10, 0, 6); Track.Position = UDim2.new(0, 5, 1, -12); Track.BackgroundColor3 = Color3.fromRGB(40, 40, 40); Instance.new("UICorner", Track).CornerRadius = UDim.new(0, 3)
+    local Progress = Instance.new("Frame", Track); Progress.Size = UDim2.new(0, 0, 1, 0); Progress.BackgroundColor3 = Color3.fromRGB(85, 170, 85); Instance.new("UICorner", Progress).CornerRadius = UDim.new(0, 3)
+    local draggingSlider = false
+    local function updateSlider(inputX) local relativeX = math.clamp(inputX - Track.AbsolutePosition.X, 0, Track.AbsoluteSize.X); local percent = relativeX / Track.AbsoluteSize.X; Progress.Size = UDim2.new(percent, 0, 1, 0); local value = min + (max - min) * percent; ValueLabel.Text = string.format("%.1f", value); callback(value); end
+    Track.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then draggingSlider = true; updateSlider(input.Position.X); end end)
+    Track.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then draggingSlider = false; end end)
+    UserInputService.InputChanged:Connect(function(input) if draggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then updateSlider(input.Position.X); end end)
+    local initialPercent = (default - min) / (max - min); Progress.Size = UDim2.new(initialPercent, 0, 1, 0); ValueLabel.Text = string.format("%.1f", default)
+    return SliderFrame
+end
+
+-- **CORREGIDO Y RESTAURADO**: Creación del contenido de las pestañas
+local VisualLayout = Instance.new("UIListLayout", tabContents["Visual"]); VisualLayout.SortOrder = Enum.SortOrder.LayoutOrder; VisualLayout.Padding = UDim.new(0, 3)
+local InnocentLabel = Instance.new("TextLabel", tabContents["Visual"]); InnocentLabel.Size = UDim2.new(1, 0, 0, 20); InnocentLabel.BackgroundColor3 = Color3.fromRGB(0, 150, 0); InnocentLabel.Text = "INNOCENT ESP"; InnocentLabel.TextColor3 = Color3.new(1, 1, 1); InnocentLabel.TextScaled = true; InnocentLabel.Font = Enum.Font.GothamBold; InnocentLabel.LayoutOrder = 1; Instance.new("UICorner", InnocentLabel).CornerRadius = UDim.new(0, 4)
+CreateToggleButton(tabContents["Visual"], "Chams", false, function(state) ESPSettings.Innocent.chams = state; ToggleESP() end)[1].LayoutOrder = 2
+CreateToggleButton(tabContents["Visual"], "Tracer", false, function(state) ESPSettings.Innocent.tracer = state; ToggleESP() end)[1].LayoutOrder = 3
+CreateToggleButton(tabContents["Visual"], "Box", false, function(state) ESPSettings.Innocent.box = state; ToggleESP() end)[1].LayoutOrder = 4
+
+local SheriffLabel = Instance.new("TextLabel", tabContents["Visual"]); SheriffLabel.Size = UDim2.new(1, 0, 0, 20); SheriffLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 255); SheriffLabel.Text = "SHERIFF ESP"; SheriffLabel.TextColor3 = Color3.new(1, 1, 1); SheriffLabel.TextScaled = true; SheriffLabel.Font = Enum.Font.GothamBold; SheriffLabel.LayoutOrder = 5; Instance.new("UICorner", SheriffLabel).CornerRadius = UDim.new(0, 4)
+CreateToggleButton(tabContents["Visual"], "Chams", false, function(state) ESPSettings.Sheriff.chams = state; ToggleESP() end)[1].LayoutOrder = 6
+CreateToggleButton(tabContents["Visual"], "Tracer", false, function(state) ESPSettings.Sheriff.tracer = state; ToggleESP() end)[1].LayoutOrder = 7
+CreateToggleButton(tabContents["Visual"], "Box", false, function(state) ESPSettings.Sheriff.box = state; ToggleESP() end)[1].LayoutOrder = 8
+
+local MurderLabel = Instance.new("TextLabel", tabContents["Visual"]); MurderLabel.Size = UDim2.new(1, 0, 0, 20); MurderLabel.BackgroundColor3 = Color3.fromRGB(255, 0, 0); MurderLabel.Text = "MURDER ESP"; MurderLabel.TextColor3 = Color3.new(1, 1, 1); MurderLabel.TextScaled = true; MurderLabel.Font = Enum.Font.GothamBold; MurderLabel.LayoutOrder = 9; Instance.new("UICorner", MurderLabel).CornerRadius = UDim.new(0, 4)
+CreateToggleButton(tabContents["Visual"], "Chams", false, function(state) ESPSettings.Murder.chams = state; ToggleESP() end)[1].LayoutOrder = 10
+CreateToggleButton(tabContents["Visual"], "Tracer", false, function(state) ESPSettings.Murder.tracer = state; ToggleESP() end)[1].LayoutOrder = 11
+CreateToggleButton(tabContents["Visual"], "Box", false, function(state) ESPSettings.Murder.box = state; ToggleESP() end)[1].LayoutOrder = 12
+
+local MainLayout = Instance.new("UIListLayout", tabContents["Main"]); MainLayout.SortOrder = Enum.SortOrder.LayoutOrder; MainLayout.Padding = UDim.new(0, 3)
+local speedGlitchFrame, speedToggleButton = CreateToggleButton(tabContents["Main"], "Fake Speed Glitch", false, function(state) SetSpeedGlitchState(state) end)
+speedGlitchFrame.LayoutOrder = 1
+internalSpeedToggleButton = speedToggleButton
+CreateSlider(tabContents["Main"], "Speed", 16, 100, 16, function(value) speedGlitchValue = value end).LayoutOrder = 2
+
+CloseButton.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
+ScreenGui.Destroying:Connect(function()
+    if ESPConnection then ESPConnection:Disconnect() end
+    if speedGlitchConnection then speedGlitchConnection:Disconnect() end
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") and originalWalkSpeed then LocalPlayer.Character.Humanoid.WalkSpeed = originalWalkSpeed end
+    for _, player in pairs(Players:GetPlayers()) do RemoveESP(player) end
+    for name, line in pairs(TracerLines) do if line and line.Remove then line:Remove() end end
+    for name, box in pairs(BoxESP) do for _, line in pairs(box) do if line and line.Remove then line:Remove() end end end
+    print("GUI y todos los servicios han sido cerrados y limpiados.")
+end)
+
+print("GUI Corregida. Todos los elementos deberían mostrarse correctamente ahora.")
