@@ -1,0 +1,633 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+
+-- Variables del ESP
+local ESPConnection
+local ESPEnabled = false
+local ESPSettings = {
+    Innocent = {chams = false, tracer = false, box = false},
+    Sheriff = {chams = false, tracer = false, box = false},
+    Murder = {chams = false, tracer = false, box = false}
+}
+local TracerLines = {}
+local BoxESP = {}
+
+-- Funciones del ESP
+local function GetRoleColor(role)
+    if role == "Sheriff" then
+        return Color3.fromRGB(0, 0, 255)
+    elseif role == "Murder" then
+        return Color3.fromRGB(255, 0, 0)
+    else
+        return Color3.fromRGB(0, 255, 0)
+    end
+end
+
+local function CreateChams(player, color)
+    if not player.Character then return end
+    
+    -- Verificar si el jugador está vivo
+    local humanoid = player.Character:FindFirstChild("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then
+        if player.Character:FindFirstChild("ESP_Highlight") then
+            player.Character.ESP_Highlight:Destroy()
+        end
+        return
+    end
+    
+    local highlight = player.Character:FindFirstChild("ESP_Highlight")
+    if not highlight then
+        highlight = Instance.new("Highlight")
+        highlight.Name = "ESP_Highlight"
+        highlight.Parent = player.Character
+        
+        -- Configuración inicial optimizada
+        highlight.Adornee = player.Character
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.FillTransparency = 0.3
+        highlight.OutlineTransparency = 0
+    end
+    
+    -- Solo actualizar colores si han cambiado (optimización)
+    if highlight.FillColor ~= color then
+        highlight.FillColor = color
+    end
+    
+    -- Outline dinámico basado en el rol
+    if color == Color3.fromRGB(255, 0, 0) then -- Murder
+        highlight.OutlineColor = Color3.fromRGB(255, 100, 100)
+        highlight.FillTransparency = 0.2 -- Más visible para murder
+    elseif color == Color3.fromRGB(0, 0, 255) then -- Sheriff
+        highlight.OutlineColor = Color3.fromRGB(100, 100, 255)
+        highlight.FillTransparency = 0.25
+    else -- Innocent
+        highlight.OutlineColor = Color3.fromRGB(100, 255, 100)
+        highlight.FillTransparency = 0.35 -- Menos visible para innocent
+    end
+end
+
+local function CreateTracer(player, color)
+    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then 
+        -- Si no tiene character, ocultar tracer
+        if TracerLines[player.Name] then
+            TracerLines[player.Name].Visible = false
+        end
+        return 
+    end
+    
+    -- Verificar si el jugador está vivo (tiene humanoid y salud > 0)
+    local humanoid = player.Character:FindFirstChild("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then
+        if TracerLines[player.Name] then
+            TracerLines[player.Name].Visible = false
+        end
+        return
+    end
+    
+    -- Verificar si está en el mapa (no en el lobby)
+    local rootPart = player.Character.HumanoidRootPart
+    if rootPart.Position.Y < -50 then -- Si está muy abajo, probablemente en lobby
+        if TracerLines[player.Name] then
+            TracerLines[player.Name].Visible = false
+        end
+        return
+    end
+    
+    local line = TracerLines[player.Name]
+    if not line then
+        line = Drawing.new("Line")
+        TracerLines[player.Name] = line
+    end
+    
+    local camera = workspace.CurrentCamera
+    local rootPosition, onScreen = camera:WorldToViewportPoint(rootPart.Position)
+    
+    if onScreen and rootPosition.Z > 0 then
+        line.From = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y)
+        line.To = Vector2.new(rootPosition.X, rootPosition.Y)
+        line.Color = color
+        line.Thickness = 2
+        line.Transparency = 1
+        line.Visible = true
+    else
+        line.Visible = false
+    end
+end
+
+local function CreateBox(player, color)
+    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+    
+    local box = BoxESP[player.Name]
+    if not box then
+        box = {
+            topLeft = Drawing.new("Line"),
+            topRight = Drawing.new("Line"),
+            bottomLeft = Drawing.new("Line"),
+            bottomRight = Drawing.new("Line"),
+            leftSide = Drawing.new("Line"),
+            rightSide = Drawing.new("Line"),
+            topSide = Drawing.new("Line"),
+            bottomSide = Drawing.new("Line")
+        }
+        BoxESP[player.Name] = box
+    end
+    
+    local camera = workspace.CurrentCamera
+    local rootPart = player.Character.HumanoidRootPart
+    local rootPos, onScreen = camera:WorldToViewportPoint(rootPart.Position)
+    local headPos = camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, 2, 0))
+    local legPos = camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, -3, 0))
+    
+    if onScreen and rootPos.Z > 0 then
+        local height = math.abs(headPos.Y - legPos.Y)
+        local width = height * 0.6
+        
+        local x1 = rootPos.X - width/2
+        local x2 = rootPos.X + width/2  
+        local y1 = headPos.Y
+        local y2 = legPos.Y
+        
+        -- Configurar todas las líneas de la caja
+        local lines = {
+            {box.topSide, Vector2.new(x1, y1), Vector2.new(x2, y1)},
+            {box.bottomSide, Vector2.new(x1, y2), Vector2.new(x2, y2)},
+            {box.leftSide, Vector2.new(x1, y1), Vector2.new(x1, y2)},
+            {box.rightSide, Vector2.new(x2, y1), Vector2.new(x2, y2)}
+        }
+        
+        for _, lineData in pairs(lines) do
+            local line, from, to = lineData[1], lineData[2], lineData[3]
+            line.From = from
+            line.To = to
+            line.Color = color
+            line.Thickness = 2
+            line.Transparency = 1
+            line.Visible = true
+        end
+        
+        -- Ocultar las líneas de esquina (no las necesitamos)
+        box.topLeft.Visible = false
+        box.topRight.Visible = false
+        box.bottomLeft.Visible = false
+        box.bottomRight.Visible = false
+        
+    else
+        -- Ocultar todas las líneas si no está en pantalla
+        for _, line in pairs(box) do
+            line.Visible = false
+        end
+    end
+end
+
+local function RemoveESP(player)
+    -- Remove Chams
+    if player.Character and player.Character:FindFirstChild("ESP_Highlight") then
+        player.Character.ESP_Highlight:Destroy()
+    end
+    
+    -- Remove Tracer
+    if TracerLines[player.Name] then
+        TracerLines[player.Name]:Remove()
+        TracerLines[player.Name] = nil
+    end
+    
+    -- Remove Box
+    if BoxESP[player.Name] then
+        for _, line in pairs(BoxESP[player.Name]) do
+            line:Remove()
+        end
+        BoxESP[player.Name] = nil
+    end
+end
+
+local function DetectRole(player)
+    local function hasTool(name)
+        if player.Backpack:FindFirstChild(name) then return true end
+        if player.Character and player.Character:FindFirstChild(name) then return true end
+        return false
+    end
+    
+    if hasTool("Gun") or hasTool("IsGun") then
+        return "Sheriff"
+    elseif hasTool("Knife") then
+        return "Murder"
+    else
+        return "Innocent"
+    end
+end
+
+local function ToggleESP()
+    if ESPConnection then
+        ESPConnection:Disconnect()
+        ESPConnection = nil
+    end
+    
+    -- Clear all ESP
+    for _, player in pairs(Players:GetPlayers()) do
+        RemoveESP(player)
+    end
+    
+    -- Check if any ESP is enabled
+    local anyEnabled = false
+    for role, settings in pairs(ESPSettings) do
+        for espType, enabled in pairs(settings) do
+            if enabled then
+                anyEnabled = true
+                break
+            end
+        end
+        if anyEnabled then break end
+    end
+    
+    if anyEnabled then
+        ESPConnection = RunService.Heartbeat:Connect(function() -- Cambiado de RenderStepped a Heartbeat para mejor rendimiento
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    local role = DetectRole(player)
+                    local color = GetRoleColor(role)
+                    
+                    if ESPSettings[role] then
+                        if ESPSettings[role].chams then
+                            CreateChams(player, color)
+                        else
+                            -- Solo remover si existe
+                            local highlight = player.Character:FindFirstChild("ESP_Highlight")
+                            if highlight then
+                                highlight:Destroy()
+                            end
+                        end
+                        
+                        if ESPSettings[role].tracer then
+                            CreateTracer(player, color)
+                        elseif TracerLines[player.Name] then
+                            TracerLines[player.Name].Visible = false
+                        end
+                        
+                        if ESPSettings[role].box then
+                            CreateBox(player, color)
+                        elseif BoxESP[player.Name] then
+                            for _, line in pairs(BoxESP[player.Name]) do
+                                line.Visible = false
+                            end
+                        end
+                    else
+                        RemoveESP(player)
+                    end
+                end
+            end
+        end)
+    end
+end
+
+-- Limpiar GUI anterior si existe
+local existingGui = LocalPlayer.PlayerGui:FindFirstChild("MurderMysteryGUI")
+if existingGui then
+    existingGui:Destroy()
+end
+
+-- Crear GUI Principal
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "MurderMysteryGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Frame Principal
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 350, 0, 250)
+MainFrame.Position = UDim2.new(0.5, -175, 0.5, -125)
+MainFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+MainFrame.BorderSizePixel = 0
+MainFrame.ZIndex = 1
+MainFrame.Parent = ScreenGui
+
+-- Esquinas redondeadas
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 8)
+MainCorner.Parent = MainFrame
+
+-- Título
+local TitleBar = Instance.new("Frame")
+TitleBar.Name = "TitleBar"
+TitleBar.Size = UDim2.new(1, 0, 0, 30)
+TitleBar.Position = UDim2.new(0, 0, 0, 0)
+TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+TitleBar.BorderSizePixel = 0
+TitleBar.Active = true
+TitleBar.Draggable = false
+TitleBar.Parent = MainFrame
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 8)
+TitleCorner.Parent = TitleBar
+
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Size = UDim2.new(1, -60, 1, 0)
+TitleLabel.Position = UDim2.new(0, 10, 0, 0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "Murder Mystery GUI"
+TitleLabel.TextColor3 = Color3.new(1, 1, 1)
+TitleLabel.TextScaled = true
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.Parent = TitleBar
+
+-- Botón de cerrar
+local CloseButton = Instance.new("TextButton")
+CloseButton.Size = UDim2.new(0, 25, 0, 25)
+CloseButton.Position = UDim2.new(1, -30, 0, 2.5)
+CloseButton.BackgroundColor3 = Color3.fromRGB(255, 85, 85)
+CloseButton.BorderSizePixel = 0
+CloseButton.Text = "X"
+CloseButton.TextColor3 = Color3.new(1, 1, 1)
+CloseButton.TextScaled = true
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.Parent = TitleBar
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 4)
+CloseCorner.Parent = CloseButton
+
+-- Frame de pestañas
+local TabFrame = Instance.new("Frame")
+TabFrame.Size = UDim2.new(1, 0, 0, 35)
+TabFrame.Position = UDim2.new(0, 0, 0, 30)
+TabFrame.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+TabFrame.BorderSizePixel = 0
+TabFrame.Parent = MainFrame
+
+-- Contenedor de contenido
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Size = UDim2.new(1, 0, 1, -65)
+ContentFrame.Position = UDim2.new(0, 0, 0, 65)
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.Parent = MainFrame
+
+-- Variables para las pestañas
+local currentTab = "Visual"
+local tabs = {"Visual", "Combat", "Main"}
+local tabButtons = {}
+local tabContents = {}
+
+-- Crear botones de pestañas
+for i, tabName in ipairs(tabs) do
+    local TabButton = Instance.new("TextButton")
+    TabButton.Size = UDim2.new(1/3, -2, 1, -4)
+    TabButton.Position = UDim2.new((i-1)/3, 1, 0, 2)
+    TabButton.BackgroundColor3 = tabName == currentTab and Color3.fromRGB(75, 75, 75) or Color3.fromRGB(65, 65, 65)
+    TabButton.BorderSizePixel = 0
+    TabButton.Text = tabName
+    TabButton.TextColor3 = Color3.new(1, 1, 1)
+    TabButton.TextScaled = true
+    TabButton.Font = Enum.Font.Gotham
+    TabButton.Parent = TabFrame
+    
+    local TabCorner = Instance.new("UICorner")
+    TabCorner.CornerRadius = UDim.new(0, 4)
+    TabCorner.Parent = TabButton
+    
+    tabButtons[tabName] = TabButton
+end
+
+-- Crear contenidos de pestañas
+for _, tabName in ipairs(tabs) do
+    local TabContent = Instance.new("ScrollingFrame")
+    TabContent.Size = UDim2.new(1, -10, 1, -10)
+    TabContent.Position = UDim2.new(0, 5, 0, 5)
+    TabContent.BackgroundTransparency = 1
+    TabContent.ScrollBarThickness = 4
+    TabContent.ScrollBarImageColor3 = Color3.fromRGB(75, 75, 75)
+    TabContent.CanvasSize = UDim2.new(0, 0, 0, 300)
+    TabContent.Visible = tabName == currentTab
+    TabContent.Parent = ContentFrame
+    
+    tabContents[tabName] = TabContent
+end
+
+-- Función para cambiar pestañas
+local function SwitchTab(tabName)
+    currentTab = tabName
+    for name, button in pairs(tabButtons) do
+        button.BackgroundColor3 = name == tabName and Color3.fromRGB(75, 75, 75) or Color3.fromRGB(65, 65, 65)
+    end
+    for name, content in pairs(tabContents) do
+        content.Visible = name == tabName
+    end
+end
+
+-- Configurar eventos de pestañas
+for tabName, button in pairs(tabButtons) do
+    button.MouseButton1Click:Connect(function()
+        SwitchTab(tabName)
+    end)
+end
+
+-- Función para crear botones toggle
+local function CreateToggleButton(parent, text, defaultState, callback)
+    local ToggleFrame = Instance.new("Frame")
+    ToggleFrame.Size = UDim2.new(1, 0, 0, 25)
+    ToggleFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    ToggleFrame.BorderSizePixel = 0
+    ToggleFrame.Parent = parent
+    
+    local ToggleCorner = Instance.new("UICorner")
+    ToggleCorner.CornerRadius = UDim.new(0, 4)
+    ToggleCorner.Parent = ToggleFrame
+    
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(1, -50, 1, 0)
+    Label.Position = UDim2.new(0, 5, 0, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = text
+    Label.TextColor3 = Color3.new(1, 1, 1)
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.TextScaled = true
+    Label.Font = Enum.Font.Gotham
+    Label.Parent = ToggleFrame
+    
+    local ToggleButton = Instance.new("TextButton")
+    ToggleButton.Size = UDim2.new(0, 40, 0, 18)
+    ToggleButton.Position = UDim2.new(1, -43, 0.5, -9)
+    ToggleButton.BackgroundColor3 = defaultState and Color3.fromRGB(85, 170, 85) or Color3.fromRGB(170, 85, 85)
+    ToggleButton.BorderSizePixel = 0
+    ToggleButton.Text = defaultState and "ON" or "OFF"
+    ToggleButton.TextColor3 = Color3.new(1, 1, 1)
+    ToggleButton.TextScaled = true
+    ToggleButton.Font = Enum.Font.GothamBold
+    ToggleButton.Parent = ToggleFrame
+    
+    local ButtonCorner = Instance.new("UICorner")
+    ButtonCorner.CornerRadius = UDim.new(0, 3)
+    ButtonCorner.Parent = ToggleButton
+    
+    local isToggled = defaultState
+    ToggleButton.MouseButton1Click:Connect(function()
+        isToggled = not isToggled
+        ToggleButton.BackgroundColor3 = isToggled and Color3.fromRGB(85, 170, 85) or Color3.fromRGB(170, 85, 85)
+        ToggleButton.Text = isToggled and "ON" or "OFF"
+        callback(isToggled)
+    end)
+    
+    return ToggleFrame
+end
+
+-- Agregar layout a Visual
+local VisualLayout = Instance.new("UIListLayout")
+VisualLayout.SortOrder = Enum.SortOrder.LayoutOrder
+VisualLayout.Padding = UDim.new(0, 3)
+VisualLayout.Parent = tabContents["Visual"]
+
+-- Agregar opciones ESP en Visual
+-- INNOCENT ESP
+local InnocentLabel = Instance.new("TextLabel")
+InnocentLabel.Size = UDim2.new(1, 0, 0, 20)
+InnocentLabel.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+InnocentLabel.BorderSizePixel = 0
+InnocentLabel.Text = "INNOCENT ESP"
+InnocentLabel.TextColor3 = Color3.new(1, 1, 1)
+InnocentLabel.TextScaled = true
+InnocentLabel.Font = Enum.Font.GothamBold
+InnocentLabel.LayoutOrder = 1
+InnocentLabel.Parent = tabContents["Visual"]
+
+local InnocentCorner = Instance.new("UICorner")
+InnocentCorner.CornerRadius = UDim.new(0, 4)
+InnocentCorner.Parent = InnocentLabel
+
+CreateToggleButton(tabContents["Visual"], "Chams", false, function(state)
+    ESPSettings.Innocent.chams = state
+    ToggleESP()
+end).LayoutOrder = 2
+
+CreateToggleButton(tabContents["Visual"], "Tracer", false, function(state)
+    ESPSettings.Innocent.tracer = state
+    ToggleESP()
+end).LayoutOrder = 3
+
+CreateToggleButton(tabContents["Visual"], "Box", false, function(state)
+    ESPSettings.Innocent.box = state
+    ToggleESP()
+end).LayoutOrder = 4
+
+-- SHERIFF ESP
+local SheriffLabel = Instance.new("TextLabel")
+SheriffLabel.Size = UDim2.new(1, 0, 0, 20)
+SheriffLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 255)
+SheriffLabel.BorderSizePixel = 0
+SheriffLabel.Text = "SHERIFF ESP"
+SheriffLabel.TextColor3 = Color3.new(1, 1, 1)
+SheriffLabel.TextScaled = true
+SheriffLabel.Font = Enum.Font.GothamBold
+SheriffLabel.LayoutOrder = 5
+SheriffLabel.Parent = tabContents["Visual"]
+
+local SheriffCorner = Instance.new("UICorner")
+SheriffCorner.CornerRadius = UDim.new(0, 4)
+SheriffCorner.Parent = SheriffLabel
+
+CreateToggleButton(tabContents["Visual"], "Chams", false, function(state)
+    ESPSettings.Sheriff.chams = state
+    ToggleESP()
+end).LayoutOrder = 6
+
+CreateToggleButton(tabContents["Visual"], "Tracer", false, function(state)
+    ESPSettings.Sheriff.tracer = state
+    ToggleESP()
+end).LayoutOrder = 7
+
+CreateToggleButton(tabContents["Visual"], "Box", false, function(state)
+    ESPSettings.Sheriff.box = state
+    ToggleESP()
+end).LayoutOrder = 8
+
+-- MURDER ESP
+local MurderLabel = Instance.new("TextLabel")
+MurderLabel.Size = UDim2.new(1, 0, 0, 20)
+MurderLabel.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+MurderLabel.BorderSizePixel = 0
+MurderLabel.Text = "MURDER ESP"
+MurderLabel.TextColor3 = Color3.new(1, 1, 1)
+MurderLabel.TextScaled = true
+MurderLabel.Font = Enum.Font.GothamBold
+MurderLabel.LayoutOrder = 9
+MurderLabel.Parent = tabContents["Visual"]
+
+local MurderCorner = Instance.new("UICorner")
+MurderCorner.CornerRadius = UDim.new(0, 4)
+MurderCorner.Parent = MurderLabel
+
+CreateToggleButton(tabContents["Visual"], "Chams", false, function(state)
+    ESPSettings.Murder.chams = state
+    ToggleESP()
+end).LayoutOrder = 10
+
+CreateToggleButton(tabContents["Visual"], "Tracer", false, function(state)
+    ESPSettings.Murder.tracer = state
+    ToggleESP()
+end).LayoutOrder = 11
+
+CreateToggleButton(tabContents["Visual"], "Box", false, function(state)
+    ESPSettings.Murder.box = state
+    ToggleESP()
+end).LayoutOrder = 12
+
+-- Hacer el GUI arrastrable (sistema simple y confiable)
+local dragging = false
+local dragStart = nil
+local startPos = nil
+
+TitleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+    end
+end)
+
+TitleBar.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- Cerrar GUI
+CloseButton.MouseButton1Click:Connect(function()
+    -- Desactivar ESP y limpiar elementos Drawing
+    if ESPConnection then
+        ESPConnection:Disconnect()
+        ESPConnection = nil
+    end
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        RemoveESP(player)
+    end
+    
+    -- Limpiar arrays
+    for name, line in pairs(TracerLines) do
+        line:Remove()
+    end
+    TracerLines = {}
+    
+    for name, box in pairs(BoxESP) do
+        for _, line in pairs(box) do
+            line:Remove()
+        end
+    end
+    BoxESP = {}
+    
+    ScreenGui:Destroy()
+end)
+
+print("GUI Creada - Visual, Combat, Main | ESP en pestaña Visual")
+print("Si no ves la GUI, revisa tu PlayerGui")
+print("Posición GUI:", MainFrame.Position)
+print("Tamaño GUI:", MainFrame.Size)
