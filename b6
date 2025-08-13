@@ -3,11 +3,8 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
---[[----------------------------------------------------------------------------------------------------------
-                                        VARIABLES GLOBALES Y DE ESTADO
-----------------------------------------------------------------------------------------------------------]]
 
--- Variables del ESP
+--ESP
 local ESPConnection
 local ESPSettings = {
     Innocent = {chams = false, tracer = false, box = false},
@@ -17,21 +14,18 @@ local ESPSettings = {
 local TracerLines = {}
 local BoxESP = {}
 
--- Variables del Speed Glitch
+
 local speedGlitchConnection
 local speedGlitchEnabled = false
 local speedGlitchValue = 16 -- Velocidad por defecto (equivalente a la normal)
 local originalWalkSpeed = nil
 
--- **NUEVA** Variable para el estado minimizado
+
 local isMinimized = false
 local originalMainFrameSize = UDim2.new(0, 350, 0, 250)
 
---[[----------------------------------------------------------------------------------------------------------
-                                        LÓGICA DE FUNCIONALIDADES
-----------------------------------------------------------------------------------------------------------]]
 
--- Función para limpiar ESP de un jugador específico
+
 local function CleanupPlayerESP(playerName)
     if TracerLines[playerName] then
         TracerLines[playerName]:Remove()
@@ -49,7 +43,7 @@ Players.PlayerRemoving:Connect(function(player)
     CleanupPlayerESP(player.Name)
 end)
 
--- Funciones del ESP (sin cambios)
+
 local function GetRoleColor(role)
     if role == "Sheriff" then return Color3.fromRGB(0, 0, 255)
     elseif role == "Murder" then return Color3.fromRGB(255, 0, 0)
@@ -186,7 +180,7 @@ local function ToggleESP()
     end
 end
 
--- Función para el Speed Glitch
+
 local function UpdateSpeedGlitch()
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("Humanoid") then return end
@@ -210,14 +204,12 @@ local function UpdateSpeedGlitch()
     end
 end
 
---[[----------------------------------------------------------------------------------------------------------
-                                        CREACIÓN DE LA INTERFAZ (GUI)
-----------------------------------------------------------------------------------------------------------]]
 
--- Limpiar GUI anterior si existe
+
+
 if LocalPlayer.PlayerGui:FindFirstChild("MurderMysteryGUI") then LocalPlayer.PlayerGui.MurderMysteryGUI:Destroy() end
 
--- Crear GUI Principal
+
 local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
 ScreenGui.Name = "MurderMysteryGUI"; ScreenGui.ResetOnSpawn = false; ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
@@ -232,7 +224,7 @@ local TitleCorner = Instance.new("UICorner", TitleBar); TitleCorner.CornerRadius
 local TitleLabel = Instance.new("TextLabel", TitleBar)
 TitleLabel.Size = UDim2.new(1, -115, 1, 0); TitleLabel.Position = UDim2.new(0, 10, 0, 0); TitleLabel.BackgroundTransparency = 1; TitleLabel.Text = "Murder Mystery GUI"; TitleLabel.TextColor3 = Color3.new(1, 1, 1); TitleLabel.TextScaled = true; TitleLabel.Font = Enum.Font.GothamBold
 
--- **NUEVO** Botón de Minimizar
+
 local MinimizeButton = Instance.new("TextButton", TitleBar)
 MinimizeButton.Size = UDim2.new(0, 25, 0, 25); MinimizeButton.Position = UDim2.new(1, -60, 0, 2.5); MinimizeButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0); MinimizeButton.Text = "_"; MinimizeButton.TextColor3 = Color3.new(1, 1, 1); MinimizeButton.TextScaled = true; MinimizeButton.Font = Enum.Font.GothamBold
 local MinimizeCorner = Instance.new("UICorner", MinimizeButton); MinimizeCorner.CornerRadius = UDim.new(0, 4)
@@ -275,7 +267,7 @@ for tabName, button in pairs(tabButtons) do
     button.MouseButton1Click:Connect(function() SwitchTab(tabName) end)
 end
 
--- **NUEVA** Función para minimizar/maximizar
+
 local function ToggleMinimize()
     isMinimized = not isMinimized
     
@@ -296,7 +288,7 @@ local function ToggleMinimize()
     end
 end
 
--- Función para crear botones toggle
+
 local function CreateToggleButton(parent, text, defaultState, callback)
     local ToggleFrame = Instance.new("Frame", parent)
     ToggleFrame.Size = UDim2.new(1, 0, 0, 25); ToggleFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
@@ -316,7 +308,7 @@ local function CreateToggleButton(parent, text, defaultState, callback)
     return ToggleFrame
 end
 
--- Función para crear sliders
+
 local function CreateSlider(parent, text, min, max, default, callback)
     local SliderFrame = Instance.new("Frame", parent)
     SliderFrame.Size = UDim2.new(1, 0, 0, 40); SliderFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 60); SliderFrame.BorderSizePixel = 0
@@ -374,9 +366,7 @@ local function CreateSlider(parent, text, min, max, default, callback)
     return SliderFrame
 end
 
---[[----------------------------------------------------------------------------------------------------------
-                                     CONTENIDO DE LAS PESTAÑAS
-----------------------------------------------------------------------------------------------------------]]
+
 
 -- Agregar layout a Visual
 local VisualLayout = Instance.new("UIListLayout", tabContents["Visual"])
@@ -419,11 +409,8 @@ CreateSlider(tabContents["Main"], "Speed", 16, 100, 16, function(value)
     speedGlitchValue = value
 end).LayoutOrder = 2
 
---[[----------------------------------------------------------------------------------------------------------
-                                        MANEJO DE EVENTOS DE LA GUI
-----------------------------------------------------------------------------------------------------------]]
 
--- Hacer el GUI arrastrable
+
 local dragging = false
 local dragStart, startPos = nil, nil
 TitleBar.InputBegan:Connect(function(input)
@@ -443,10 +430,10 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- **NUEVO** Conectar el botón de minimizar
+
 MinimizeButton.MouseButton1Click:Connect(ToggleMinimize)
 
--- Cerrar GUI
+
 CloseButton.MouseButton1Click:Connect(function()
     -- Desactivar y limpiar todo
     if ESPConnection then ESPConnection:Disconnect(); ESPConnection = nil; end
