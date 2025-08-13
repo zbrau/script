@@ -1,0 +1,215 @@
+-- This is a LocalScript. Place it inside StarterPlayer > StarterPlayerScripts
+
+-- Wait for the game to be ready
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+-- Load Rayfield Library
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- Services
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+
+-- Local Player
+local LocalPlayer = Players.LocalPlayer
+
+-- Create Window
+local Window = Rayfield:CreateWindow({
+    Name = "Utility Menu",
+    LoadingTitle = "Loading Menu...",
+    LoadingSubtitle = "by Gemini",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "MyUtilityConfig",
+        FileName = "Settings"
+    },
+    ToggleUIKeybind = Enum.KeyCode.RightControl -- Key to open/close the menu
+})
+
+-- =================================================================================
+-- PLAYER TAB
+-- =================================================================================
+local PlayerTab = Window:CreateTab("Player", 4483362458)
+
+PlayerTab:CreateSlider({
+    Name = "WalkSpeed",
+    Range = {16, 250},
+    Increment = 1,
+    Suffix = " studs/s",
+    CurrentValue = 16,
+    Flag = "WalkSpeed",
+    Callback = function(Value)
+        local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            print("DEBUG: Setting WalkSpeed to: " .. tostring(Value))
+            humanoid.WalkSpeed = Value
+        else
+            print("DEBUG: WalkSpeed - Humanoid not found.")
+        end
+    end,
+})
+
+PlayerTab:CreateSlider({
+    Name = "JumpPower",
+    Range = {50, 300},
+    Increment = 5,
+    Suffix = " power",
+    CurrentValue = 50,
+    Flag = "JumpPower",
+    Callback = function(Value)
+        local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.JumpPower = Value
+        end
+    end,
+})
+
+local infiniteJumpConnection = nil
+PlayerTab:CreateToggle({
+    Name = "Infinite Jump",
+    CurrentValue = false,
+    Flag = "InfiniteJump",
+    Callback = function(Value)
+        if Value then
+            infiniteJumpConnection = UserInputService.InputBegan:Connect(function(input)
+                if input.KeyCode == Enum.KeyCode.Space then
+                    local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    if humanoid then
+                        print("DEBUG: Infinite Jump - Firing jump")
+                        humanoid.Jump = true
+                    end
+                end
+            end)
+        else
+            if infiniteJumpConnection then
+                infiniteJumpConnection:Disconnect()
+                infiniteJumpConnection = nil
+            end
+        end
+    end,
+})
+
+local noClipConnection = nil
+PlayerTab:CreateToggle({
+    Name = "NoClip (Ghost Mode)",
+    CurrentValue = false,
+    Flag = "NoClip",
+    Callback = function(Value)
+        if Value then
+            noClipConnection = RunService.Stepped:Connect(function()
+                if LocalPlayer.Character then
+                    for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            part.CanCollide = false
+                        end
+                    end
+                end
+            end)
+        else
+            if noClipConnection then
+                noClipConnection:Disconnect()
+                noClipConnection = nil
+            end
+            if LocalPlayer.Character then
+                for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = true
+                    end
+                end
+            end
+        end
+    end,
+})
+
+-- =================================================================================
+-- VISUALS TAB
+-- =================================================================================
+local VisualsTab = Window:CreateTab("Visuals", 4483362458)
+
+local espEnabled = false
+local espGuis = {}
+
+local function updateEspForPlayer(player)
+    if player == LocalPlayer then return end
+
+    local character = player.Character
+    local gui = espGuis[player]
+
+    if espEnabled and character and character:FindFirstChild("Head") then
+        local head = character.Head
+        if not gui then
+            gui = Instance.new("BillboardGui")
+            gui.Name = player.Name .. "_ESP"
+            gui.Adornee = head
+            gui.Size = UDim2.new(0, 175, 0, 50)
+            gui.AlwaysOnTop = true
+
+            local nameLabel = Instance.new("TextLabel", gui)
+            nameLabel.Name = "NameLabel"
+            nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
+            nameLabel.Position = UDim2.new(0, 0, 0, 0)
+            nameLabel.BackgroundTransparency = 1
+            nameLabel.TextColor3 = Color3.new(1, 1, 1)
+            nameLabel.Font = Enum.Font.SourceSansSemibold
+            nameLabel.TextScaled = true
+
+            local distanceLabel = Instance.new("TextLabel", gui)
+            distanceLabel.Name = "DistanceLabel"
+            distanceLabel.Size = UDim2.new(1, 0, 0.5, 0)
+            distanceLabel.Position = UDim2.new(0, 0, 0.5, 0)
+            distanceLabel.BackgroundTransparency = 1
+            distanceLabel.TextColor3 = Color3.new(0.9, 0.9, 0.9)
+            distanceLabel.Font = Enum.Font.SourceSans
+            distanceLabel.TextScaled = true
+
+            gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+            espGuis[player] = gui
+        end
+        
+        gui.Enabled = true
+        gui.Adornee = head
+        gui.NameLabel.Text = player.Name
+        
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head") then
+            local distance = math.floor((LocalPlayer.Character.Head.Position - head.Position).Magnitude)
+            gui.DistanceLabel.Text = "[" .. tostring(distance) .. "m]"
+        end
+    else
+        if gui then
+            gui.Enabled = false
+        end
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if not espEnabled then return end
+    for _, player in ipairs(Players:GetPlayers()) do
+        updateEspForPlayer(player)
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    if espGuis[player] then
+        espGuis[player]:Destroy()
+        espGuis[player] = nil
+    end
+end)
+
+VisualsTab:CreateToggle({
+    Name = "Player ESP",
+    CurrentValue = false,
+    Flag = "PlayerESP",
+    Callback = function(Value)
+        espEnabled = Value
+        if not espEnabled then
+            for _, gui in pairs(espGuis) do
+                if gui then
+                    gui.Enabled = false
+                end
+            end
+        end
+    end,
+})
