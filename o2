@@ -1,0 +1,133 @@
+-- This is a single LocalScript that handles both the Teleporter and Auto-Rebirth
+-- Place it in StarterPlayer > StarterPlayerScripts
+
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+-- Services & Libraries
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+
+-- Create Window & Tabs
+local Window = Rayfield:CreateWindow({ Name = "Obby Helper", LoadingTitle = "Loading...", ToggleUIKeybind = Enum.KeyCode.RightControl })
+local MainTab = Window:CreateTab("Automation", 4483362458)
+local TeleportsTab = Window:CreateTab("Teleports", 4483362458)
+
+-- Find Game Folders
+local mainObbyFolder = game.Workspace:WaitForChild("MainObby")
+local checkpointsFolder = mainObbyFolder and mainObbyFolder:WaitForChild("Checkpoints")
+
+-- ===================================================================
+-- SHARED FUNCTIONS
+-- ===================================================================
+
+-- MODIFIED: Teleports player higher and no longer jumps
+local function teleportToCheckpoint(checkpointPart)
+    local character = LocalPlayer.Character
+    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+
+    -- Teleport to the checkpoint's CFrame, but higher up to ensure a solid landing
+    local offset = CFrame.new(0, 12, 0) -- Increased height to 12 studs
+    rootPart.CFrame = checkpointPart.CFrame * offset
+end
+
+-- ===================================================================
+-- AUTOMATION TAB
+-- ===================================================================
+
+MainTab:CreateSection("Obby Automation")
+
+-- Auto-Farm Toggle
+local isAutoFarming = false
+local autoFarmToggle = nil
+autoFarmToggle = MainTab:CreateToggle({
+    Name = "Auto-Farm All Checkpoints",
+    CurrentValue = false,
+    Flag = "AutoFarmToggle",
+    Callback = function(Value)
+        isAutoFarming = Value
+        if isAutoFarming then
+            task.spawn(function()
+                Rayfield:Notify({ title = "Auto-Farm", text = "Starting...", duration = 3 })
+                for i = 1, 100 do
+                    if not isAutoFarming then Rayfield:Notify({ title = "Auto-Farm", text = "Stopped.", duration = 3 }); break end
+                    local checkpointPart = checkpointsFolder and checkpointsFolder:FindFirstChild("Checkpoint " .. i)
+                    if checkpointPart then teleportToCheckpoint(checkpointPart) end
+                    task.wait(1)
+                end
+                if isAutoFarming then Rayfield:Notify({ title = "Auto-Farm", text = "Finished!", duration = 5 }); autoFarmToggle:Set(false) end
+            end)
+        end
+    end,
+})
+
+-- Auto-Rebirth Toggle
+local autoRebirthEnabled = false
+MainTab:CreateToggle({
+    Name = "Auto-Rebirth on Final Stage",
+    CurrentValue = false,
+    Flag = "AutoRebirthToggle",
+    Callback = function(Value)
+        autoRebirthEnabled = Value
+        if Value then Rayfield:Notify({ title = "Auto-Rebirth", text = "Enabled.", duration = 3 }) else Rayfield:Notify({ title = "Auto-Rebirth", text = "Disabled.", duration = 3 }) end
+    end,
+})
+
+-- ===================================================================
+-- TELEPORTS TAB
+-- ===================================================================
+
+if checkpointsFolder then
+    for i = 1, 100 do
+        local checkpointPart = checkpointsFolder:FindFirstChild("Checkpoint " .. i)
+        if checkpointPart and checkpointPart:IsA("BasePart") then
+            TeleportsTab:CreateButton({ Name = "Checkpoint " .. i, Callback = function() teleportToCheckpoint(checkpointPart) end })
+        end
+    end
+else
+    TeleportsTab:CreateLabel("Error: Checkpoints folder not found!")
+end
+
+-- ===================================================================
+-- CORE LOGIC (Handles Rebirth and Post-Rebirth Teleport)
+-- ===================================================================
+
+local justRebirthed = false
+local touchedConnection = nil
+
+local function onCharacterAdded(character)
+    -- 1. Post-Rebirth Teleport Logic
+    task.wait(1)
+    if justRebirthed then
+        print("Post-rebirth teleport detected!")
+        justRebirthed = false
+        local finalCheckpoint = checkpointsFolder and checkpointsFolder:FindFirstChild("Checkpoint 100")
+        if finalCheckpoint then teleportToCheckpoint(finalCheckpoint) end
+    end
+
+    -- 2. Auto-Rebirth Touch Logic
+    local humanoid = character:WaitForChild("Humanoid")
+    if touchedConnection then touchedConnection:Disconnect() end
+    touchedConnection = humanoid.Touched:Connect(function(touchedPart)
+        if not autoRebirthEnabled or touchedPart.Name ~= "Checkpoint 100" then return end
+        
+        print("AutoRebirth: Touched final checkpoint & toggle is ON.")
+        local obbyModule = require(ReplicatedStorage.Modules.obbyModule)
+        local rebirthEvent = ReplicatedStorage.Events.Shop.Rebirth
+        local playerStage = LocalPlayer.leaderstats.Stage
+        if not (obbyModule and rebirthEvent and playerStage) then return end
+
+        if playerStage.Value >= obbyModule[2].stageRange then
+            print("AutoRebirth: Firing event.")
+            justRebirthed = true
+            rebirthEvent:FireServer()
+        end
+    end)
+end
+
+if LocalPlayer.Character then onCharacterAdded(LocalPlayer.Character) end
+LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+
+print("Obby Helper Script Loaded.")
