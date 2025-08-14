@@ -1,0 +1,99 @@
+-- SCRIPT #1: Teleport GUI --
+-- Place this in a LocalScript named "TeleportGUI" inside StarterPlayerScripts
+
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local Window = Rayfield:CreateWindow({ Name = "Obby Helper", LoadingTitle = "Loading...", ToggleUIKeybind = Enum.KeyCode.RightControl })
+local TeleportTab = Window:CreateTab("Checkpoints", 4483362458)
+
+local mainObbyFolder = game.Workspace:WaitForChild("MainObby")
+local checkpointsFolder = mainObbyFolder and mainObbyFolder:WaitForChild("Checkpoints")
+
+local function teleportToCheckpoint(checkpointPart)
+    local character = LocalPlayer.Character
+    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not (rootPart and humanoid) then return end
+    rootPart.CFrame = checkpointPart.CFrame * CFrame.new(0, 4, 0)
+    task.wait(0.1)
+    humanoid.Jump = true
+end
+
+if checkpointsFolder then
+    -- Create individual teleport buttons
+    for i = 1, 100 do
+        local checkpointPart = checkpointsFolder:FindFirstChild("Checkpoint " .. i)
+        if checkpointPart and checkpointPart:IsA("BasePart") then
+            TeleportTab:CreateButton({ Name = "Checkpoint " .. i, Callback = function()
+                teleportToCheckpoint(checkpointPart)
+            end})
+        end
+    end
+
+    -- Create the new Auto-Farm toggle
+    TeleportTab:CreateSection("Automation")
+    local isAutoFarming = false
+    local autoFarmToggle = nil
+    autoFarmToggle = TeleportTab:CreateToggle({
+        Name = "Auto-Farm All Checkpoints",
+        CurrentValue = false,
+        Flag = "AutoFarmToggle",
+        Callback = function(Value)
+            isAutoFarming = Value
+            if isAutoFarming then
+                -- Start the process in a new coroutine to not freeze the game
+                task.spawn(function()
+                    Rayfield:Notify({ title = "Auto-Farm", text = "Starting process...", duration = 3 })
+                    for i = 1, 100 do
+                        -- If user turned off the toggle, stop everything
+                        if not isAutoFarming then
+                            Rayfield:Notify({ title = "Auto-Farm", text = "Process stopped by user.", duration = 3 })
+                            break
+                        end
+
+                        local checkpointName = "Checkpoint " .. i
+                        local checkpointPart = checkpointsFolder:FindFirstChild(checkpointName)
+
+                        if checkpointPart then
+                            print("Auto-Farming to: " .. checkpointName)
+                            teleportToCheckpoint(checkpointPart)
+                        else
+                            print("Auto-Farm: Skipping missing checkpoint " .. checkpointName)
+                        end
+
+                        -- Wait 1 second as requested
+                        task.wait(1)
+                    end
+
+                    -- Check if the loop finished naturally
+                    if isAutoFarming then
+                        print("Auto-Farm finished.")
+                        Rayfield:Notify({ title = "Auto-Farm", text = "Finished all checkpoints!", duration = 5 })
+                        autoFarmToggle:Set(false) -- Reset the toggle in the UI
+                    end
+                end)
+            end
+        end,
+    })
+else
+    TeleportTab:CreateLabel("Error: Checkpoints folder not found!")
+end
+
+-- This part handles teleporting back after a rebirth
+LocalPlayer.CharacterAdded:Connect(function(character)
+    task.wait(1) -- Wait for character to load
+    if _G.justRebirthed == true then
+        print("Post-rebirth teleport detected. Sending you back!")
+        _G.justRebirthed = false -- Reset the flag immediately!
+        local finalCheckpoint = checkpointsFolder and checkpointsFolder:FindFirstChild("Checkpoint 100")
+        if finalCheckpoint then
+            teleportToCheckpoint(finalCheckpoint)
+        end
+    end
+end)
+
+print("Teleport GUI Loaded with Auto-Farm.")
