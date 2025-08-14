@@ -1,0 +1,249 @@
+-- 🔓 GUI COMPLETO: PhantomX Ultimate v3.1
+-- ✅ Todo incluido: Fling, ESP, Fly, Auto-Farm, Plugins, Notificaciones, etc.
+
+-- === Cargar Sirius ===
+local Sirius = nil
+repeat
+    pcall(function()
+        Sirius = loadstring(game:HttpGet("https://raw.githubusercontent.com/SiriusDotLua/Sirius/main/Source.lua"))()
+    end)
+    task.wait()
+until Sirius
+
+-- === Ventana principal ===
+local Window = Sirius:Window("💀 PhantomX Ultimate", Color3.fromRGB(255, 80, 120), Enum.KeyCode.RightControl)
+
+-- === Variables ===
+local Player = game.Players.LocalPlayer
+local Players = game.Players
+local Workspace = game.Workspace
+local Camera = Workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local Character, Humanoid, HumanoidRootPart
+
+local function GetCharacter()
+    Character = Player.Character or Player.CharacterAdded:Wait()
+    Humanoid = Character:FindFirstChildOfClass("Humanoid")
+    HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+end
+
+GetCharacter()
+Player.CharacterAdded:Connect(GetCharacter)
+
+-- === Notificaciones ===
+local function Notify(Text, Duration)
+    Window:Notification("<font color='#00FFEE'>" .. Text .. "</font>", Duration or 3)
+end
+
+-- === Pestaña: Jugador ===
+local TabPlayer = Window:Page("🧑 Jugador", 6026565612)
+
+TabPlayer:Slider("👟 WalkSpeed", 16, 16, 1000, function(Value)
+    if Humanoid then Humanoid.WalkSpeed = Value end
+end)
+
+TabPlayer:Slider("🚀 JumpPower", 50, 50, 500, function(Value)
+    if Humanoid then Humanoid.JumpPower = Value end
+end)
+
+-- === Infinite Jump ===
+local InfJump = false
+TabPlayer:Toggle("♾️ Salto Infinito", false, function(State)
+    InfJump = State
+end)
+
+UserInputService.JumpRequest:Connect(function()
+    if InfJump and Humanoid then
+        Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end)
+
+-- === Noclip ===
+local Noclip = false
+TabPlayer:Toggle("🚫 Noclip (N)", false, function(State)
+    Noclip = State
+    if HumanoidRootPart then
+        HumanoidRootPart.Anchored = State
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(Input)
+    if Input.KeyCode == Enum.KeyCode.N then
+        Noclip = not Noclip
+        if HumanoidRootPart then
+            HumanoidRootPart.Anchored = Noclip
+        end
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if Noclip and HumanoidRootPart then
+        HumanoidRootPart.CanCollide = false
+        local Move = Vector3.new(0, 0, 0)
+        local Speed = 100
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then Move = Move + Camera.CFrame.LookVector * Speed end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then Move = Move - Camera.CFrame.LookVector * Speed end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then Move = Move - Camera.CFrame.RightVector * Speed end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then Move = Move + Camera.CFrame.RightVector * Speed end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then Move = Move + Vector3.new(0, Speed, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then Move = Move - Vector3.new(0, Speed, 0) end
+        HumanoidRootPart.CFrame = HumanoidRootPart.CFrame + Move * 0.1
+    end
+end)
+
+-- === Pestaña: Movimiento ===
+local TabMove = Window:Page("🚀 Movimiento", 118517218)
+
+-- Fly
+local Flying = false
+TabMove:Toggle("✈️ Fly (F)", false, function(State)
+    Flying = State
+    if HumanoidRootPart then
+        HumanoidRootPart.Anchored = State
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(Input)
+    if Input.KeyCode == Enum.KeyCode.F then
+        Flying = not Flying
+        if HumanoidRootPart then
+            HumanoidRootPart.Anchored = Flying
+        end
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if Flying and HumanoidRootPart then
+        HumanoidRootPart.CanCollide = false
+        local Move = Vector3.new(0, 0, 0)
+        local Speed = 100
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then Move = Move + Camera.CFrame.LookVector * Speed end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then Move = Move - Camera.CFrame.LookVector * Speed end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then Move = Move - Camera.CFrame.RightVector * Speed end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then Move = Move + Camera.CFrame.RightVector * Speed end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then Move = Move + Vector3.new(0, Speed, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then Move = Move - Vector3.new(0, Speed, 0) end
+        HumanoidRootPart.CFrame = HumanoidRootPart.CFrame + Move * 0.1
+    end
+end)
+
+-- === Pestaña: Teleport ===
+local TabTP = Window:Page("📍 Teleport", 8785381028)
+
+TabTP:Dropdown("🎯 Jugadores", function()
+    local List = {}
+    for _, P in Players:GetPlayers() do
+        if P ~= Player then
+            table.insert(List, P.Name)
+        end
+    end
+    return List
+end, function(Name)
+    local Target = Players:FindFirstChild(Name)
+    if Target and Target.Character then
+        HumanoidRootPart.CFrame = Target.Character:FindFirstChild("HumanoidRootPart").CFrame
+        Notify("TP a " .. Name)
+    end
+end)
+
+TabTP:Button("🖱️ TP al Ratón", function()
+    local Mouse = Player:GetMouse()
+    if Mouse.Target then
+        HumanoidRootPart.CFrame = CFrame.new(Mouse.Hit.Position + Vector3.new(0, 5, 0))
+        Notify("TP al ratón")
+    end
+end)
+
+-- === Pestaña: ESP ===
+local TabESP = Window:Page("👁️ ESP", 3926305904)
+local ESPBoxes = {}
+
+TabESP:Toggle("👥 ESP Jugadores", false, function(State)
+    if not State then
+        for _, Box in pairs(ESPBoxes) do Box:Destroy() end
+        ESPBoxes = {}
+    else
+        spawn(function()
+            while State do
+                task.wait()
+                for _, P in Players:GetPlayers() do
+                    if P ~= Player and P.Character then
+                        local Head = P.Character:FindFirstChild("Head")
+                        if Head and not Head:FindFirstChildWhichIsA("BoxHandleAdornment") then
+                            local Box = Instance.new("BoxHandleAdornment")
+                            Box.Adornee = Head
+                            Box.Size = Head.Size + Vector3.new(0.1, 0.1, 0.1)
+                            Box.Color3 = Color3.fromRGB(0, 255, 255)
+                            Box.Transparency = 0.5
+                            Box.AlwaysOnTop = true
+                            Box.ZIndex = 10
+                            Box.Parent = Camera
+                            table.insert(ESPBoxes, Box)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+-- === Pestaña: Fling ===
+local TabFling = Window:Page("💥 Fling", 892466017)
+
+TabFling:Dropdown("🎯 Fling a Jugador", function()
+    local List = {}
+    for _, P in Players:GetPlayers() do
+        if P ~= Player then
+            table.insert(List, P.Name)
+        end
+    end
+    return List
+end, function(Name)
+    local Target = Players:FindFirstChild(Name)
+    if Target and Target.Character and HumanoidRootPart then
+        local HRP = Target.Character:FindFirstChild("HumanoidRootPart")
+        if HRP then
+            local BV = Instance.new("BodyVelocity")
+            BV.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+            BV.Velocity = (HRP.Position - HumanoidRootPart.Position).unit * 200
+            BV.Parent = HumanoidRootPart
+            task.delay(0.5, function() BV:Destroy() end)
+            Notify("💥 Lanzado!")
+        end
+    end
+end)
+
+-- === Pestaña: Auto-Farm ===
+local TabFarm = Window:Page("⚔️ Farm", 2864007918)
+
+local AutoFarm = false
+TabFarm:Toggle("🤖 Auto-Farm NPCs", false, function(State)
+    AutoFarm = State
+end)
+
+RunService.Heartbeat:Connect(function()
+    if AutoFarm then
+        local Closest = nil
+        local Dist = math.huge
+        for _, NPC in Workspace:GetChildren() do
+            if NPC:IsA("Model") and NPC:FindFirstChild("Humanoid") and NPC.Humanoid.Health > 0 then
+                local HRP = NPC:FindFirstChild("HumanoidRootPart")
+                if HRP then
+                    local Mag = (HumanoidRootPart.Position - HRP.Position).Magnitude
+                    if Mag < Dist then
+                        Dist = Mag
+                        Closest = HRP
+                    end
+                end
+            end
+        end
+        if Closest then
+            Humanoid:MoveTo(Closest.Position)
+        end
+    end
+end)
+
+-- === Notificación final ===
+Notify("✅ PhantomX Ultimate cargado", 5)
