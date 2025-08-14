@@ -23,7 +23,7 @@ local Window = Rayfield:CreateWindow({
     LoadingSubtitle = "by Phantom",
     ConfigurationSaving = { Enabled = true, FolderName = "PhantomX", FileName = "Config" },
     Discord = { Enabled = false },
-    KeySystem = true, -- ✅ Sistema de claves activado
+    KeySystem = false, -- ✅ Sistema de claves activado
     KeySettings = {
         Title = "🔐 Acceso requerido",
         Subtitle = "GUI Privada",
