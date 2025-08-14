@@ -1,0 +1,133 @@
+-- // Servicios
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso") or character:FindFirstChild("HumanoidRootPart")
+
+-- // Variables
+local originalWalkSpeed = humanoid.WalkSpeed
+local originalJumpPower = humanoid.JumpPower
+local infiniteJumpEnabled = false
+local noClipEnabled = false
+local noclipActive = false
+
+-- // Rayfield Library
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- // Crear ventana
+local Window = Rayfield:CreateWindow({
+    Name = "Player ESP",
+    LoadingTitle = "GUI Cargando",
+    LoadingSubtitle = "by XxX",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "RayfieldInterface",
+        FileName = "Basics"
+    },
+    Discord = {
+        Enabled = false,
+        Invite = "",
+        RememberRedirect = true
+    },
+    KeySystem = false
+})
+
+-- // Sección: Movement
+local MovementTab = Window:CreateTab("Movement", nil)
+
+-- WalkSpeed Slider
+local WalkSpeedSlider = MovementTab:CreateSlider({
+    Name = "WalkSpeed",
+    Range = {16, 50},
+    Increment = 1,
+    Suffix = " studs/sec",
+    CurrentValue = originalWalkSpeed,
+    Flag = "WalkSpeedSlider",
+    Callback = function(Value)
+        if humanoid then
+            humanoid.WalkSpeed = Value
+        end
+    end
+})
+
+-- JumpPower Slider
+local JumpPowerSlider = MovementTab:CreateSlider({
+    Name = "JumpPower",
+    Range = {50, 150},
+    Increment = 1,
+    Suffix = " studs",
+    CurrentValue = originalJumpPower,
+    Flag = "JumpPowerSlider",
+    Callback = function(Value)
+        if humanoid then
+            humanoid.JumpPower = Value
+        end
+    end
+})
+
+-- Infinite Jump Toggle
+local InfiniteJumpToggle = MovementTab:CreateToggle({
+    Name = "Salto Infinito",
+    CurrentValue = false,
+    Flag = "InfiniteJump",
+    Callback = function(Value)
+        infiniteJumpEnabled = Value
+    end
+})
+
+-- No-Clip Toggle
+local NoClipToggle = MovementTab:CreateToggle({
+    Name = "No Clip",
+    CurrentValue = false,
+    Flag = "NoClip",
+    Callback = function(Value)
+        noclipActive = Value
+        if noclipActive and character then
+            for _, part in pairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end
+})
+
+-- // Función: Salto Infinito
+UserInputService.JumpRequest:Connect(function()
+    if infiniteJumpEnabled then
+        if humanoid then
+            humanoid:ChangeState("Jumping")
+        end
+    end
+end)
+
+-- // Función: No-Clip (actualización en cada frame)
+RunService:BindToRenderStep("NoClip", Enum.RenderPriority.Camera.Value, function()
+    if noclipActive and character and torso then
+        for _, part in pairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end
+end)
+
+-- // Notificación de carga
+Rayfield:Notify({
+    Title = "GUI Cargada",
+    Content = "Bienvenido a la herramienta de jugador",
+    Duration = 5,
+    Image = 4483366805,
+    Actions = {
+        Ignore = {
+            Name = "OK",
+            Callback = function()
+                print("Notificación cerrada")
+            end
+        }
+    }
+})
