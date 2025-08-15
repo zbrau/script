@@ -1,0 +1,306 @@
+-- // Servicios
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local Camera = workspace.CurrentCamera
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
+
+-- // Variables
+local savedPosition = nil
+local flyActive = false
+local flySpeed = 10
+local godMode = false
+local espEnabled = false
+local tracersEnabled = false
+local chamsEnabled = false
+local visibleCheck = false
+local espFolder = nil
+local tracerFolder = nil
+local chamColor = Color3.fromRGB(255, 0, 0)
+
+-- // Rayfield
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- // Crear ventana
+local Window = Rayfield:CreateWindow({
+    Name = "GUI Avanzada",
+    LoadingTitle = "Cargando...",
+    LoadingSubtitle = "por XxX",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "RayfieldGUI",
+        FileName = "AdvancedConfig"
+    },
+    Discord = {
+        Enabled = false,
+        Invite = "",
+        RememberRedirect = true
+    },
+    KeySystem = false
+})
+
+-- // Sección: Teletransporte
+local TeleportTab = Window:CreateTab("Teleport", nil)
+
+-- TP to Mouse
+TeleportTab:CreateButton({
+    Name = "TP to Mouse",
+    Callback = function()
+        local mouse = player:GetMouse()
+        if mouse.Target then
+            rootPart.CFrame = CFrame.new(mouse.Hit.Position + Vector3.new(0, 5, 0))
+        end
+    end
+})
+
+-- TP to Player
+local playerDropdown = TeleportTab:CreateDropdown({
+    Name = "Seleccionar Jugador",
+    Options = {},
+    CurrentOption = "",
+    Flag = "PlayerDropdown",
+    Callback = function(Value)
+        -- Se actualiza con la lista dinámica
+    end
+})
+
+-- Actualizar lista de jugadores
+coroutine.wrap(function()
+    while wait(2) do
+        local options = {}
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= player then
+                table.insert(options, plr.Name)
+            end
+        end
+        playerDropdown:Refresh(options, true)
+    end
+end)()
+
+TeleportTab:CreateButton({
+    Name = "TP to Player",
+    Callback = function()
+        local selected = Rayfield.Flags.PlayerDropdown.CurrentOption
+        local target = Players:FindFirstChild(selected)
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+            rootPart.CFrame = target.Character.HumanoidRootPart.CFrame
+        end
+    end
+})
+
+-- Reveal Location
+TeleportTab:CreateButton({
+    Name = "Reveal Location",
+    Callback = function()
+        local pos = rootPart.Position
+        Rayfield:Notify({
+            Title = "Posición",
+            Content = string.format("X: %.2f, Y: %.2f, Z: %.2f", pos.x, pos.y, pos.z),
+            Duration = 10
+        })
+    end
+})
+
+-- Save / Load Position
+TeleportTab:CreateButton({
+    Name = "Save Position",
+    Callback = function()
+        savedPosition = rootPart.CFrame
+        Rayfield:Notify({ Title = "Guardado", Content = "Posición guardada.", Duration = 3 })
+    end
+})
+
+TeleportTab:CreateButton({
+    Name = "Load Position",
+    Callback = function()
+        if savedPosition then
+            rootPart.CFrame = savedPosition
+            Rayfield:Notify({ Title = "Cargado", Content = "Posición restaurada.", Duration = 3 })
+        else
+            Rayfield:Notify({ Title = "Error", Content = "No hay posición guardada.", Duration = 3 })
+        end
+    end
+})
+
+-- // Sección: Visual
+local VisualTab = Window:CreateTab("Visual", nil)
+
+-- ESP Toggle
+VisualTab:CreateToggle({
+    Name = "ESP de Jugadores",
+    CurrentValue = false,
+    Callback = function(Value)
+        espEnabled = Value
+        if not espEnabled and espFolder then
+            espFolder:Destroy()
+            espFolder = nil
+        elseif espEnabled and not espFolder then
+            espFolder = Instance.new("Folder", Camera)
+            espFolder.Name = "PlayerESP"
+        end
+    end
+})
+
+-- Tracers
+VisualTab:CreateToggle({
+    Name = "Tracers",
+    CurrentValue = false,
+    Callback = function(Value)
+        tracersEnabled = Value
+        if not tracersEnabled and tracerFolder then
+            tracerFolder:Destroy()
+            tracerFolder = nil
+        elseif tracersEnabled and not tracerFolder then
+            tracerFolder = Instance.new("Folder", Camera)
+            tracerFolder.Name = "Tracers"
+        end
+    end
+})
+
+-- Chams
+VisualTab:CreateToggle({
+    Name = "Chams (Colorear modelos)",
+    CurrentValue = false,
+    Callback = function(Value)
+        chamsEnabled = Value
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= player and plr.Character then
+                for _, part in pairs(plr.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.Material = Enum.Material.ForceField
+                        part.Color = chamColor
+                        part.Transparency = chamsEnabled and 0.7 or 1
+                    end
+                end
+            end
+        end
+    end
+})
+
+-- Visible Check
+VisualTab:CreateToggle({
+    Name = "Visible Check (para ESP)",
+    CurrentValue = false,
+    Callback = function(Value)
+        visibleCheck = Value
+    end
+})
+
+-- // Sección: Movement
+local MovementTab = Window:CreateTab("Movement", nil)
+
+-- Fly
+local flyToggle = MovementTab:CreateToggle({
+    Name = "Fly (Q: bajar, E: subir)",
+    CurrentValue = false,
+    Callback = function(Value)
+        flyActive = Value
+        if not flyActive and character then
+            character:WaitForChild("HumanoidRootPart").Anchored = false
+        end
+    end
+})
+
+UserInputService.InputBegan:Connect(function(input)
+    if flyActive then
+        if input.KeyCode == Enum.KeyCode.E then
+            while UserInputService:IsKeyDown(Enum.KeyCode.E) and flyActive do
+                rootPart.Position = rootPart.Position + Vector3.new(0, 5, 0)
+                wait(0.1)
+            end
+        elseif input.KeyCode == Enum.KeyCode.Q then
+            while UserInputService:IsKeyDown(Enum.KeyCode.Q) and flyActive do
+                rootPart.Position = rootPart.Position - Vector3.new(0, 5, 0)
+                wait(0.1)
+            end
+        end
+    end
+end)
+
+-- God Mode
+MovementTab:CreateToggle({
+    Name = "God Mode",
+    CurrentValue = false,
+    Callback = function(Value)
+        godMode = Value
+        if godMode then
+            humanoid.Health = 9999
+            humanoid.MaxHealth = 9999
+        else
+            humanoid.MaxHealth = 100
+        end
+    end
+})
+
+-- // Eventos: Actualización de ESP y Tracers
+RunService.RenderStepped:Connect(function()
+    if espEnabled and espFolder then
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= player and plr.Character and plr.Character:FindFirstChild("Head") then
+                local head = plr.Character.Head
+                local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
+                if onScreen then
+                    local distance = (player.Character.HumanoidRootPart.Position - plr.Character.HumanoidRootPart.Position).magnitude
+                    local health = plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health or 0
+                    local maxHealth = plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.MaxHealth or 100
+
+                    -- ESP Box
+                    local esp = espFolder:FindFirstChild(plr.Name) or Instance.new("BillboardGui", espFolder)
+                    esp.Name = plr.Name
+                    esp.Adornee = head
+                    esp.Size = UDim2.new(4, 0, 3, 0)
+                    esp.StudsOffset = Vector3.new(0, 3, 0)
+                    esp.AlwaysOnTop = true
+
+                    local frame = esp:FindFirstChild("Frame") or Instance.new("Frame", esp)
+                    frame.Size = UDim2.new(1, 0, 1, 0)
+                    frame.BorderSizePixel = 2
+                    frame.BorderColor3 = Color3.new(1, 1, 1)
+                    frame.BackgroundColor3 = Color3.new(0, 0, 0)
+                    frame.BackgroundTransparency = 0.5
+
+                    local text = esp:FindFirstChild("TextLabel") or Instance.new("TextLabel", esp)
+                    text.Size = UDim2.new(1, 0, 1, 0)
+                    text.BackgroundTransparency = 1
+                    text.TextColor3 = Color3.new(1, 1, 1)
+                    text.Font = Enum.Font.Code
+                    text.TextSize = 12
+                    text.Text = string.format("%s\n[%d HP] | %.1fm", plr.Name, health, distance)
+                end
+            end
+        end
+    end
+
+    -- Tracers
+    if tracersEnabled then
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                local root = plr.Character.HumanoidRootPart
+                local screenPos, onScreen = Camera:WorldToViewportPoint(root.Position)
+                if onScreen then
+                    local line = tracerFolder:FindFirstChild(plr.Name .. "_Tracer") or Instance.new("LineHandleAdornment", tracerFolder)
+                    line.Name = plr.Name .. "_Tracer"
+                    line.Parent = tracerFolder
+                    line.Color3 = Color3.new(1, 0, 0)
+                    line.Thickness = 1
+                    line.From = Vector3.new(0, 0, 0)
+                    line.To = Camera:WorldToViewportPoint(root.Position).Position
+                    line.ZIndex = 10
+                    line.Adornee = Camera
+                end
+            end
+        end
+    end
+end)
+
+-- // Notificación final
+Rayfield:Notify({
+    Title = "GUI Cargada",
+    Content = "Todas las funciones están listas (solo en PC)",
+    Duration = 5
+})
