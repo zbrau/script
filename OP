@@ -1,0 +1,231 @@
+-- =======================================================================
+--        CAMBIADOR DE BICIS CON NOMBRES (IDs 1-200)
+-- =======================================================================
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local player = Players.LocalPlayer
+
+local ID_A_FORZAR = 1
+local activo = true
+
+-- =======================================================================
+-- LISTA COMPLETA DE BICIS (IDs 1-200)
+-- =======================================================================
+local bicis = {
+    -- BÁSICAS (1-20)
+    {1, "Basic Bike"}, {2, "Blue Bike"}, {3, "Red Bike"}, {4, "Green Bike"},
+    {5, "Yellow Bike"}, {6, "Orange Bike"}, {7, "Purple Bike"}, {8, "Pink Bike"},
+    {9, "White Bike"}, {10, "Black Bike"}, {11, "Rainbow Bike"}, {12, "Gold Bike"},
+    {13, "Silver Bike"}, {14, "Bronze Bike"}, {15, "Copper Bike"}, {16, "Diamond Bike"},
+    {17, "Emerald Bike"}, {18, "Ruby Bike"}, {19, "Sapphire Bike"}, {20, "Amethyst Bike"},
+    
+    -- INTERMEDIAS (21-50)
+    {21, "Neon Bike"}, {22, "Glow Bike"}, {23, "Fire Bike"}, {24, "Ice Bike"},
+    {25, "Lightning Bike"}, {26, "Shadow Bike"}, {27, "Ghost Bike"}, {28, "Crystal Bike"},
+    {29, "Lava Bike"}, {30, "Ocean Bike"}, {31, "Forest Bike"}, {32, "Desert Bike"},
+    {33, "Sky Bike"}, {34, "Storm Bike"}, {35, "Wind Bike"}, {36, "Earth Bike"},
+    {37, "Magma Bike"}, {38, "Frost Bike"}, {39, "Toxic Bike"}, {40, "Plasma Bike"},
+    {41, "Cosmic Bike"}, {42, "Nebula Bike"}, {43, "Galaxy Bike"}, {44, "Star Bike"},
+    {45, "Moon Bike"}, {46, "Sun Bike"}, {47, "Eclipse Bike"}, {48, "Meteor Bike"},
+    {49, "Comet Bike"}, {50, "Asteroid Bike"},
+    
+    -- RARAS (51-100)
+    {51, "Chrome Bike"}, {52, "Obsidian Bike"}, {53, "Jade Bike"}, {54, "Pearl Bike"},
+    {55, "Opal Bike"}, {56, "Topaz Bike"}, {57, "Quartz Bike"}, {58, "Onyx Bike"},
+    {59, "Marble Bike"}, {60, "Granite Bike"}, {61, "Titanium Bike"}, {62, "Platinum Bike"},
+    {63, "Mythril Bike"}, {64, "Adamantite Bike"}, {65, "Mithril Bike"}, {66, "Carbon Bike"},
+    {67, "Steel Bike"}, {68, "Iron Bike"}, {69, "Copper Bike"}, {70, "Brass Bike"},
+    {71, "Wood Bike"}, {72, "Stone Bike"}, {73, "Brick Bike"}, {74, "Glass Bike"},
+    {75, "Mirror Bike"}, {76, "Invisible Bike"}, {77, "Transparent Bike"}, {78, "Hologram Bike"},
+    {79, "Pixel Bike"}, {80, "Glitch Bike"}, {81, "Corrupted Bike"}, {82, "Virus Bike"},
+    {83, "Hacker Bike"}, {84, "Matrix Bike"}, {85, "Digital Bike"}, {86, "Cyber Bike"},
+    {87, "Neon Grid Bike"}, {88, "Synthwave Bike"}, {89, "Vaporwave Bike"}, {90, "Retrowave Bike"},
+    {91, "Outrun Bike"}, {92, "80s Bike"}, {93, "Arcade Bike"}, {94, "Retro Bike"},
+    {95, "Vintage Bike"}, {96, "Classic Bike"}, {97, "Antique Bike"}, {98, "Ancient Bike"},
+    {99, "Prehistoric Bike"}, {100, "Fossil Bike"},
+    
+    -- ÉPICAS (101-150)
+    {101, "Dragon Bike"}, {102, "Phoenix Bike"}, {103, "Unicorn Bike"}, {104, "Griffin Bike"},
+    {105, "Pegasus Bike"}, {106, "Hydra Bike"}, {107, "Cerberus Bike"}, {108, "Kraken Bike"},
+    {109, "Leviathan Bike"}, {110, "Behemoth Bike"}, {111, "Titan Bike"}, {112, "Colossus Bike"},
+    {113, "Goliath Bike"}, {114, "Giant Bike"}, {115, "Mammoth Bike"}, {116, "Whale Bike"},
+    {117, "Shark Bike"}, {118, "Eagle Bike"}, {119, "Falcon Bike"}, {120, "Hawk Bike"},
+    {121, "Wolf Bike"}, {122, "Lion Bike"}, {123, "Tiger Bike"}, {124, "Bear Bike"},
+    {125, "Panda Bike"}, {126, "Koala Bike"}, {127, "Sloth Bike"}, {128, "Fox Bike"},
+    {129, "Raccoon Bike"}, {130, "Otter Bike"}, {131, "Seal Bike"}, {132, "Penguin Bike"},
+    {133, "Flamingo Bike"}, {134, "Parrot Bike"}, {135, "Toucan Bike"}, {136, "Peacock Bike"},
+    {137, "Butterfly Bike"}, {138, "Dragonfly Bike"}, {139, "Bee Bike"}, {140, "Ladybug Bike"},
+    {141, "Spider Bike"}, {142, "Scorpion Bike"}, {143, "Snake Bike"}, {144, "Lizard Bike"},
+    {145, "Turtle Bike"}, {146, "Frog Bike"}, {147, "Fish Bike"}, {148, "Dolphin Bike"},
+    {149, "Octopus Bike"}, {150, "Jellyfish Bike"},
+    
+    -- LEGENDARIAS (151-200)
+    {151, "God Bike"}, {152, "Angel Bike"}, {153, "Demon Bike"}, {154, "Devil Bike"},
+    {155, "Heaven Bike"}, {156, "Hell Bike"}, {157, "Divine Bike"}, {158, "Cursed Bike"},
+    {159, "Blessed Bike"}, {160, "Sacred Bike"}, {161, "Holy Bike"}, {162, "Evil Bike"},
+    {163, "Dark Bike"}, {164, "Light Bike"}, {165, "Yin Yang Bike"}, {166, "Balance Bike"},
+    {167, "Chaos Bike"}, {168, "Order Bike"}, {169, "Void Bike"}, {170, "Creation Bike"},
+    {171, "Destruction Bike"}, {172, "Time Bike"}, {173, "Space Bike"}, {174, "Reality Bike"},
+    {175, "Dimension Bike"}, {176, "Universe Bike"}, {177, "Multiverse Bike"}, {178, "Infinity Bike"},
+    {179, "Eternity Bike"}, {180, "Immortal Bike"}, {181, "Mortal Bike"}, {182, "Life Bike"},
+    {183, "Death Bike"}, {184, "Rebirth Bike"}, {185, "Resurrection Bike"}, {186, "Reincarnation Bike"},
+    {187, "Soul Bike"}, {188, "Spirit Bike"}, {189, "Phantom Bike"}, {190, "Wraith Bike"},
+    {191, "Specter Bike"}, {192, "Banshee Bike"}, {193, "Vampire Bike"}, {194, "Werewolf Bike"},
+    {195, "Zombie Bike"}, {196, "Skeleton Bike"}, {197, "Mummy Bike"}, {198, "Frankenstein Bike"},
+    {199, "Witch Bike"}, {200, "Wizard Bike"},
+}
+
+-- =======================================================================
+-- INTERFAZ CON PESTAÑAS POR CATEGORÍAS
+-- =======================================================================
+local Window = Rayfield:CreateWindow({
+    Name = "🚴 Cambiador de Bicis Pro",
+    LoadingTitle = "Cargando 200 bicis...",
+})
+
+-- Toggle global
+local MainTab = Window:CreateTab("⚙️ Control", 4483362458)
+MainTab:CreateToggle({
+    Name = "🟢 Activar Auto-Cambio",
+    CurrentValue = true,
+    Callback = function(value)
+        activo = value
+        warn(value and "✓ Sistema ACTIVADO" or "⚠ Sistema DESACTIVADO")
+    end,
+})
+
+MainTab:CreateParagraph({
+    Title = "💡 Instrucciones",
+    Content = "1. Busca tu bici en las pestañas\n2. Presiona el botón de la bici\n3. Resetea (R) para aplicar"
+})
+
+-- Función para crear botón de bici
+local function crearBotonBici(tab, id, nombre)
+    tab:CreateButton({
+        Name = string.format("#%d - %s", id, nombre),
+        Callback = function()
+            ID_A_FORZAR = id
+            warn(string.format("✓ Bici seleccionada: #%d - %s", id, nombre))
+            warn("⚠ Presiona R para resetear y aplicar")
+        end,
+    })
+end
+
+-- BÁSICAS (1-20)
+local TabBasicas = Window:CreateTab("🟢 Básicas (1-20)", 4483362458)
+TabBasicas:CreateSection("Bicis Comunes")
+for i = 1, 20 do
+    crearBotonBici(TabBasicas, bicis[i][1], bicis[i][2])
+end
+
+-- INTERMEDIAS (21-50)
+local TabIntermedias = Window:CreateTab("🔵 Intermedias (21-50)", 4483362458)
+TabIntermedias:CreateSection("Bicis Poco Comunes")
+for i = 21, 50 do
+    crearBotonBici(TabIntermedias, bicis[i][1], bicis[i][2])
+end
+
+-- RARAS (51-100)
+local TabRaras = Window:CreateTab("🟣 Raras (51-100)", 4483362458)
+TabRaras:CreateSection("Bicis Raras - Parte 1")
+for i = 51, 75 do
+    crearBotonBici(TabRaras, bicis[i][1], bicis[i][2])
+end
+TabRaras:CreateSection("Bicis Raras - Parte 2")
+for i = 76, 100 do
+    crearBotonBici(TabRaras, bicis[i][1], bicis[i][2])
+end
+
+-- ÉPICAS (101-150)
+local TabEpicas = Window:CreateTab("🟠 Épicas (101-150)", 4483362458)
+TabEpicas:CreateSection("Bicis Épicas - Parte 1")
+for i = 101, 125 do
+    crearBotonBici(TabEpicas, bicis[i][1], bicis[i][2])
+end
+TabEpicas:CreateSection("Bicis Épicas - Parte 2")
+for i = 126, 150 do
+    crearBotonBici(TabEpicas, bicis[i][1], bicis[i][2])
+end
+
+-- LEGENDARIAS (151-200)
+local TabLegendarias = Window:CreateTab("🔴 Legendarias (151-200)", 4483362458)
+TabLegendarias:CreateSection("Bicis Legendarias - Parte 1")
+for i = 151, 175 do
+    crearBotonBici(TabLegendarias, bicis[i][1], bicis[i][2])
+end
+TabLegendarias:CreateSection("Bicis Legendarias - Parte 2")
+for i = 176, 200 do
+    crearBotonBici(TabLegendarias, bicis[i][1], bicis[i][2])
+end
+
+-- =======================================================================
+-- SISTEMA DE CAMBIO (IGUAL QUE ANTES)
+-- =======================================================================
+local function aplicarCambioBici(character)
+    if not activo then return end
+    
+    task.spawn(function()
+        local hrp = character:WaitForChild("HumanoidRootPart", 10)
+        if not hrp then return end
+        
+        local bikeType = hrp:WaitForChild("BikeType", 10)
+        if not bikeType then return end
+        
+        bikeType.Value = ID_A_FORZAR
+        
+        -- Monitor constante
+        local conexion
+        conexion = bikeType:GetPropertyChangedSignal("Value"):Connect(function()
+            if activo and bikeType.Value ~= ID_A_FORZAR then
+                bikeType.Value = ID_A_FORZAR
+            end
+        end)
+        
+        character.Humanoid.Died:Connect(function()
+            conexion:Disconnect()
+        end)
+    end)
+end
+
+-- Hook del módulo
+task.spawn(function()
+    local BikeModule = require(ReplicatedStorage.Modules.Bike)
+    local originalAttach = BikeModule.Attach
+    
+    BikeModule.Attach = function(self, char)
+        if activo then
+            task.spawn(function()
+                local bikeType = char:WaitForChild("HumanoidRootPart"):WaitForChild("BikeType")
+                bikeType.Value = ID_A_FORZAR
+            end)
+        end
+        return originalAttach(self, char)
+    end
+end)
+
+player.CharacterAdded:Connect(aplicarCambioBici)
+if player.Character then
+    aplicarCambioBici(player.Character)
+end
+
+-- Loop de verificación
+task.spawn(function()
+    while task.wait(5) do
+        if activo then
+            local char = player.Character
+            if char then
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local bikeType = hrp:FindFirstChild("BikeType")
+                    if bikeType and bikeType.Value ~= ID_A_FORZAR then
+                        bikeType.Value = ID_A_FORZAR
+                    end
+                end
+            end
+        end
+    end
+end)
+
+print("✅ Sistema cargado con 200 bicis organizadas")
+print("📂 Usa las pestañas para navegar por categorías")
