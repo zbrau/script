@@ -80,7 +80,7 @@ local bicis = {
 -- INTERFAZ CON PESTAÑAS POR CATEGORÍAS
 -- =======================================================================
 local Window = Rayfield:CreateWindow({
-    Name = "🚴 Cambiador de Bicis Pro",
+    Name = "🚴 Bike Changer",
     LoadingTitle = "Cargando 200 bicis...",
 })
 
