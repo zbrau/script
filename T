@@ -1,0 +1,206 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "Auto Farmer",
+    LoadingTitle = "Cargando Auto Farm",
+    LoadingSubtitle = "por Lua Codder",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = nil,
+        FileName = "AutoFarmerConfig"
+    },
+    Discord = { Enabled = false },
+    KeySystem = false
+})
+
+local AutoFarmTab = Window:CreateTab("Auto Farm", 4483362458)
+
+local function timeToSeconds(timeStr)
+    local mins, secs = timeStr:match("(%d+):([%d%.]+)")
+    if mins and secs then
+        return tonumber(mins) * 60 + tonumber(secs)
+    end
+    
+    local decimalTime = tonumber(timeStr)
+    if decimalTime then
+        return decimalTime
+    end
+    
+    local hours, minutes, seconds = timeStr:match("(%d+):(%d+):(%d+)")
+    if hours and minutes and seconds then
+        return tonumber(hours) * 3600 + tonumber(minutes) * 60 + tonumber(seconds)
+    end
+    
+    return 0
+end
+
+local function getMaxCheckpoints()
+    local checkpointsFolder = game:GetService("Workspace").WorldMap.Checkpoints
+    local maxCheckpoint = 0
+    
+    for _, child in pairs(checkpointsFolder:GetChildren()) do
+        local checkpointNum = tonumber(child.Name)
+        if checkpointNum and checkpointNum > maxCheckpoint then
+            maxCheckpoint = checkpointNum
+        end
+    end
+    
+    return maxCheckpoint
+end
+
+AutoFarmTab:CreateSection("Configuración del Auto Farm")
+
+local AutoFarmSpeed = AutoFarmTab:CreateSlider({
+    Name = "Velocidad del Vuelo",
+    Range = {50, 2000},
+    Increment = 50,
+    Suffix = " studs/s",
+    CurrentValue = 500,
+    Flag = "AutoFarmSpeedSlider"
+})
+
+local AutoFarmFallTime = AutoFarmTab:CreateSlider({
+    Name = "Caer cuando el timer pase de:",
+    Range = {10, 120},
+    Increment = 5,
+    Suffix = " segundos",
+    CurrentValue = 60,
+    Flag = "AutoFarmFallTimeSlider"
+})
+
+AutoFarmTab:CreateSection("Control")
+
+local autoFarmRunning = false
+
+local AutoFarmToggle = AutoFarmTab:CreateToggle({
+    Name = "🚀 Activar Auto Farm",
+    CurrentValue = false,
+    Flag = "AutoFarmToggle",
+    Callback = function(Value)
+        autoFarmRunning = Value
+        
+        if Value then
+            Rayfield:Notify({
+                Title = "Auto Farm Iniciado",
+                Content = "Iniciando ciclo automático...",
+                Duration = 3,
+                Image = 4483362458,
+            })
+            
+            task.spawn(function()
+                while autoFarmRunning do
+                    local player = game.Players.LocalPlayer
+                    
+                    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+                        task.wait(1)
+                        continue
+                    end
+                    
+                    local hrp = player.Character.HumanoidRootPart
+                    
+                    local maxCheckpoint = getMaxCheckpoints()
+                    if maxCheckpoint == 0 then
+                        Rayfield:Notify({Title = "Error", Content = "No se encontraron checkpoints.", Duration = 3})
+                        autoFarmRunning = false
+                        Rayfield.Flags.AutoFarmToggle:Set(false)
+                        break
+                    end
+                    
+                    local checkpointPath = game:GetService("Workspace").WorldMap.Checkpoints[tostring(maxCheckpoint)]
+                    if not checkpointPath or not checkpointPath:FindFirstChild("Base") then
+                        Rayfield:Notify({Title = "Error", Content = "No se encontró el checkpoint " .. maxCheckpoint, Duration = 3})
+                        task.wait(2)
+                        continue
+                    end
+                    
+                    local base = checkpointPath.Base
+                    local targetCFrame = base.CFrame + Vector3.new(0, 5, 0)
+                    
+                    local TweenService = game:GetService("TweenService")
+                    local speed = Rayfield.Flags.AutoFarmSpeedSlider.CurrentValue
+                    local startPos, endPos = hrp.Position, targetCFrame.Position
+                    local maxHeight = math.max(startPos.Y, endPos.Y) + 200
+                    
+                    hrp.CFrame = CFrame.new(Vector3.new(startPos.X, maxHeight, startPos.Z))
+                    
+                    local highEndPos = Vector3.new(endPos.X, maxHeight, endPos.Z)
+                    local distanceHorizontal = (hrp.Position - highEndPos).Magnitude
+                    local durationHorizontal = distanceHorizontal / speed
+                    
+                    local tweenHorizontal = TweenService:Create(hrp, TweenInfo.new(durationHorizontal, Enum.EasingStyle.Linear), {CFrame = CFrame.new(highEndPos)})
+                    
+                    Rayfield:Notify({Title = "Auto Farm", Content = "Volando al Checkpoint " .. maxCheckpoint .. "...", Duration = 2})
+                    tweenHorizontal:Play()
+                    tweenHorizontal.Completed:Wait()
+                    
+                    if not autoFarmRunning then break end
+                    
+                    local bodyVelocity = Instance.new("BodyVelocity")
+                    bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                    bodyVelocity.MaxForce = Vector3.new(0, math.huge, 0)
+                    bodyVelocity.Parent = hrp
+                    
+                    Rayfield:Notify({Title = "Esperando Timer", Content = "Flotando...", Duration = 3})
+                    
+                    local success, timerLabel = pcall(function() return game:GetService("Players").LocalPlayer.PlayerGui.ScreenGui.Timer.ImageLabel.TextLabel end)
+                    local targetFallTime = Rayfield.Flags.AutoFarmFallTimeSlider.CurrentValue
+                    
+                    if success and timerLabel then
+                        while autoFarmRunning do
+                            local totalSeconds = timeToSeconds(timerLabel.Text)
+                            if totalSeconds > targetFallTime then
+                                Rayfield:Notify({Title = "Timer Alcanzado", Content = "Tiempo: " .. timerLabel.Text .. " - Bajando ahora", Duration = 2})
+                                break
+                            end
+                            task.wait(0.5)
+                        end
+                    else
+                        task.wait(3)
+                    end
+                    
+                    if bodyVelocity then bodyVelocity:Destroy() end
+                    if not autoFarmRunning then break end
+                    
+                    local distanceDown = maxHeight - endPos.Y
+                    local durationDown = distanceDown / speed
+                    local tweenDown = TweenService:Create(hrp, TweenInfo.new(durationDown, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {CFrame = targetCFrame})
+                    
+                    Rayfield:Notify({Title = "Bajando", Content = "Descendiendo al checkpoint...", Duration = 2})
+                    tweenDown:Play()
+                    tweenDown.Completed:Wait()
+                    
+                    if not autoFarmRunning then break end
+                    
+                    task.wait(0.5)
+                    
+                    local rebirthPortal = game:GetService("Workspace").WorldMap.RestartPortal:FindFirstChild("Meshes/IceysAssetPack_Cube (1)")
+                    if rebirthPortal then
+                        hrp.CFrame = rebirthPortal.CFrame
+                        Rayfield:Notify({Title = "Rebirth Completado", Content = "Reiniciando ciclo...", Duration = 2})
+                        task.wait(2)
+                    else
+                        Rayfield:Notify({Title = "Error", Content = "No se encontró el portal de rebirth.", Duration = 3})
+                        autoFarmRunning = false
+                        Rayfield.Flags.AutoFarmToggle:Set(false)
+                        break
+                    end
+                end
+            end)
+        else
+            Rayfield:Notify({
+                Title = "Auto Farm Detenido",
+                Content = "Ciclo automático detenido.",
+                Duration = 2,
+                Image = 4483362458,
+            })
+        end
+    end,
+})
+
+AutoFarmTab:CreateSection("Información")
+AutoFarmTab:CreateParagraph({
+    Title = "Cómo funciona",
+    Content = "Al activar el Auto Farm, el script automáticamente:\n\n1. Detecta el último checkpoint disponible.\n2. Vuela hasta ese checkpoint a la velocidad configurada.\n3. Espera flotando hasta que el timer del juego pase del tiempo que configuraste.\n4. Baja al checkpoint.\n5. Se teletransporta al portal de rebirth.\n6. Repite el ciclo infinitamente.\n\nPara detenerlo, simplemente desactiva el toggle."
+})
+
+Rayfield:LoadConfiguration()
