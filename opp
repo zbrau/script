@@ -1,566 +1,241 @@
--- Script Rayfield para eliminar TODOS los scripts de daño UNIVERSALMENTE
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+-- Script Rayfield optimizado para eliminar scripts de daño en Roblox
+local url = "https://sirius.menu/rayfield"
+local success, Rayfield = pcall(function()
+    return loadstring(game:HttpGet(url))()
+end)
+
+if not success or not Rayfield then
+    warn("❌ Error al cargar Rayfield. Verifica tu conexión o el enlace.")
+    return
+end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-
 local player = Players.LocalPlayer
 
--- Protección contra errores
+-- === FUNCIONES DE UTILIDAD ===
+
+-- Destruye un objeto de forma segura
+local function safeDestroy(obj)
+    if obj and obj.Parent then
+        obj:Destroy()
+    end
+end
+
+-- Ejecuta una función con manejo de errores
 local function safeCall(func, ...)
     local success, result = pcall(func, ...)
     if not success then
-        print("⚠️ Error en función:", result)
+        warn("⚠️ Error:", result)
     end
     return success, result
 end
 
--- Función DIRECTA para eliminar DamagePart de workspace.place
-local function eliminatePlaceDamageParts()
-    local scriptsDestroyed = 0
-    
-    -- Buscar en workspace.place
-    if workspace:FindFirstChild("place") then
-        local place = workspace.place
-        print("🏢 workspace.place encontrado, buscando DamagePart...")
-        
-        -- Función recursiva para buscar DamagePart en cualquier nivel
-        local function searchDamagePartsRecursively(parent, path)
-            for _, child in pairs(parent:GetChildren()) do
-                local currentPath = path .. "." .. child.Name
-                
-                -- Si encuentra DamagePart, eliminarlo
-                if string.find(child.Name:lower(), "damage") then
-                    child:Destroy()
-                    print("💥 DamagePart eliminado en:", currentPath)
-                    scriptsDestroyed = scriptsDestroyed + 1
-                end
-                
-                -- Buscar recursivamente en los hijos
-                searchDamagePartsRecursively(child, currentPath)
-            end
-        end
-        
-        searchDamagePartsRecursively(place, "workspace.place")
-    else
-        print("ℹ️ workspace.place no encontrado")
-    end
-    
-    return scriptsDestroyed
-end
+-- Verifica si un script contiene patrones peligrosos
+local dangerousPatterns = {
+    "TakeDamage",
+    "Health%s*=",
+    "hit:FindPartOnRay",
+    "Touched:Connect",
+    "Humanoid.Health",
+    "ApplyDamage",
+    "damage",
+    "kill",
+    "destroy"
+}
 
--- Función DIRECTA para eliminar TakeDamage y TouchInterest de IcicleZombie
-local function eliminateIcicleZombieScripts()
-    local scriptsDestroyed = 0
-    
-    -- Buscar específicamente IcicleZombie
-    if workspace:FindFirstChild("Folder") and workspace.Folder:FindFirstChild("IcicleZombie") then
-        local icicleZombie = workspace.Folder.IcicleZombie
-        print("🧊 IcicleZombie encontrado, eliminando scripts...")
-        
-        -- Eliminar TakeDamage y TouchInterest del Part
-        if icicleZombie:FindFirstChild("Part") then
-            local part = icicleZombie.Part
-            
-            if part:FindFirstChild("TakeDamage") then
-                part.TakeDamage:Destroy()
-                print("💀 TakeDamage eliminado de IcicleZombie.Part")
-                scriptsDestroyed = scriptsDestroyed + 1
-            end
-            
-            if part:FindFirstChild("TouchInterest") then
-                part.TouchInterest:Destroy()
-                print("👆 TouchInterest eliminado de IcicleZombie.Part")
-                scriptsDestroyed = scriptsDestroyed + 1
-            end
-            
-            -- Eliminar TODOS los elementos del Part por seguridad
-            local children = part:GetChildren()
-            for i = #children, 1, -1 do
-                local child = children[i]
-                if child and child.Name ~= "Mesh" and child.Name ~= "SpecialMesh" then
-                    child:Destroy()
-                    print("🗑️ Elemento eliminado de IcicleZombie.Part:", child.Name)
-                    scriptsDestroyed = scriptsDestroyed + 1
-                end
-            end
-        end
-        
-        -- Eliminar otros scripts peligrosos del modelo
-        local dangerousScripts = {"AI Chase", "NPC", "Respawn", "Weld"}
-        for _, scriptName in pairs(dangerousScripts) do
-            if icicleZombie:FindFirstChild(scriptName) then
-                icicleZombie[scriptName]:Destroy()
-                print("💀 Script eliminado de IcicleZombie:", scriptName)
-                scriptsDestroyed = scriptsDestroyed + 1
-            end
-        end
-    else
-        print("ℹ️ IcicleZombie no encontrado")
-    end
-    
-    return scriptsDestroyed
-end
-
--- Función específica para eliminar modelos peligrosos completamente
-local function eliminateDangerousModels()
-    local dangerousModels = {}
-    local modelsEliminated = 0
-    
-    -- Buscar modelos peligrosos por nombre
-    local dangerousNames = {"zombie", "enemy", "monster", "killer", "damage", "attack", "hostile"}
-    
-    local allModels = getAllModelsRecursively()
-    for _, model in pairs(allModels) do
-        if model and model.Parent then
-            local modelName = model.Name:lower()
-            for _, dangerousName in pairs(dangerousNames) do
-                if string.find(modelName, dangerousName) then
-                    table.insert(dangerousModels, model)
-                    break
-                end
-            end
+local function isDangerousScript(scriptObj)
+    if not scriptObj:IsA("LuaSourceContainer") then return false end
+    local source = scriptObj.Source or ""
+    source = source:lower()
+    for _, pattern in ipairs(dangerousPatterns) do
+        if string.find(source, pattern:lower(), 1, true) then
+            return true
         end
     end
-    
-    -- Eliminar COMPLETAMENTE los modelos peligrosos
-    for _, model in pairs(dangerousModels) do
-        safeCall(function()
-            print("💥 ELIMINANDO MODELO PELIGROSO COMPLETAMENTE:", model.Name)
-            model:Destroy()
-            modelsEliminated = modelsEliminated + 1
-        end)
-    end
-    
-    print("💥 Modelos peligrosos eliminados completamente:", modelsEliminated)
-    return modelsEliminated
+    return false
 end
 
--- Obtener nombres de los modelos originales
-local originalModelNames = {}
-local function getOriginalModelNames()
-    local children = workspace.Folder:GetChildren()
-    if children[36] then table.insert(originalModelNames, children[36].Name) end
-    if children[41] then table.insert(originalModelNames, children[41].Name) end
-    if workspace.Folder.Felipe then table.insert(originalModelNames, "Felipe") end
-    if children[32] then table.insert(originalModelNames, children[32].Name) end
-    if children[31] then table.insert(originalModelNames, children[31].Name) end
-    if children[29] then table.insert(originalModelNames, children[29].Name) end
-    if children[38] then table.insert(originalModelNames, children[38].Name) end
-    if children[39] then table.insert(originalModelNames, children[39].Name) end
-    if children[23] then table.insert(originalModelNames, children[23].Name) end
-    if children[22] then table.insert(originalModelNames, children[22].Name) end
-    if children[20] then table.insert(originalModelNames, children[20].Name) end
-    if children[40] then table.insert(originalModelNames, children[40].Name) end
-    if children[35] then table.insert(originalModelNames, children[35].Name) end
-    if children[17] then table.insert(originalModelNames, children[17].Name) end
-    if children[11] then table.insert(originalModelNames, children[11].Name) end
-    if children[44] then table.insert(originalModelNames, children[44].Name) end
-    
-    print("Nombres de modelos detectados:", table.concat(originalModelNames, ", "))
-end
-
--- Función para obtener TODOS los modelos de TODA la workspace (REALMENTE UNIVERSAL)
+-- Busca modelos recursivamente SIN bucles infinitos
 local function getAllModelsRecursively()
     local allModels = {}
-    
-    -- Función recursiva para buscar modelos en cualquier nivel
-    local function findModelsRecursively(parent)
-        for _, child in pairs(parent:GetChildren()) do
+    local visited = {}
+
+    local function findModels(parent)
+        if visited[parent] then return end
+        visited[parent] = true
+
+        for _, child in ipairs(parent:GetChildren()) do
             if child:IsA("Model") then
                 table.insert(allModels, child)
-                -- Buscar recursivamente dentro del modelo
-                findModelsRecursively(child)
+                findModels(child)
             end
         end
     end
-    
-    -- Buscar en TODA la workspace (no solo en Folder)
-    findModelsRecursively(workspace)
-    
-    -- También agregar workspace.place como "modelo" para procesarlo
+
+    findModels(workspace)
     if workspace:FindFirstChild("place") then
         table.insert(allModels, workspace.place)
     end
-    
+
     return allModels
 end
 
--- Función COMPLETAMENTE UNIVERSAL para eliminar scripts de daño de CUALQUIER LUGAR
-local function removeDamageScripts()
-    local allModels = getAllModelsRecursively()
-    local totalScriptsDestroyed = 0
-    
-    for _, model in pairs(allModels) do
-        safeCall(function()
-            if model and model.Parent then
-                print("🎯 Procesando modelo:", model.Name, "en", model.Parent.Name)
-                
-                local foundScripts = false
-                
-                -- MÉTODO ULTRA-UNIVERSAL: Buscar scripts de daño en CUALQUIER LUGAR del modelo
-                local function searchAndDestroyScripts(object)
-                    -- Eliminar scripts específicos conocidos directamente (EXPANDIDO)
-                    local scriptsToRemove = {"Killer", "TakeDamage", "TouchInterest", "LoadScript", "AI Chase", "NPC", "Respawn", "Weld", "Sound"}
-                    for _, scriptName in pairs(scriptsToRemove) do
-                        if object:FindFirstChild(scriptName) then
-                            object[scriptName]:Destroy()
-                            print("💀 Script", scriptName, "eliminado de", object.Name, "en", model.Name)
-                            foundScripts = true
-                            totalScriptsDestroyed = totalScriptsDestroyed + 1
-                        end
-                    end
-                    
-                    -- MÉTODO ULTRA-AGRESIVO PARA TAKEDAMAGE Y TOUCHINTEREST
-                    for _, child in pairs(object:GetChildren()) do
-                        if child.Name == "TakeDamage" or child.Name == "TouchInterest" then
-                            child:Destroy()
-                            print("💥 FORZADO:", child.Name, "eliminado de", object.Name, "en", model.Name)
-                            foundScripts = true
-                            totalScriptsDestroyed = totalScriptsDestroyed + 1
-                        end
-                    end
-                    
-                    -- MÉTODO ULTRA-AGRESIVO PARA CUALQUIER COSA CON "DAMAGE" EN EL NOMBRE
-                    for _, child in pairs(object:GetChildren()) do
-                        if string.find(child.Name:lower(), "damage") then
-                            child:Destroy()
-                            print("💥 DAMAGE ELIMINADO:", child.Name, "de", object.Name, "en", model.Name)
-                            foundScripts = true
-                            totalScriptsDestroyed = totalScriptsDestroyed + 1
-                        end
-                    end
-                    
-                    -- Eliminar Behaviours.Killer si existe
-                    if object:FindFirstChild("Behaviours") and object.Behaviours:FindFirstChild("Killer") then
-                        object.Behaviours.Killer:Destroy()
-                        print("💀 Behaviours.Killer eliminado de", object.Name, "en", model.Name)
-                        foundScripts = true
-                        totalScriptsDestroyed = totalScriptsDestroyed + 1
-                    end
-                    
-                    -- MÉTODO ESPECÍFICO PARA ICICLE ZOMBIE Y SIMILARES
-                    if object.Name == "Part" and object.Parent and (string.find(object.Parent.Name:lower(), "zombie") or string.find(object.Parent.Name:lower(), "enemy") or string.find(object.Parent.Name:lower(), "monster")) then
-                        -- Eliminar TODOS los hijos del Part que puedan ser peligrosos
-                        for i = #object:GetChildren(), 1, -1 do
-                            local child = object:GetChildren()[i]
-                            if child and child ~= object then
-                                child:Destroy()
-                                print("🧊 Elemento peligroso eliminado:", child.Name, "de Part en", object.Parent.Name)
-                                foundScripts = true
-                                totalScriptsDestroyed = totalScriptsDestroyed + 1
-                            end
-                        end
-                    end
-                    
-                    -- MÉTODO ULTRA-AGRESIVO: Eliminar TODOS los scripts del objeto
-                    for _, child in pairs(object:GetChildren()) do
-                        if child:IsA("LocalScript") or child:IsA("Script") or child:IsA("ModuleScript") then
-                            child:Destroy()
-                            print("🗑️ Script eliminado:", child.Name, "de", object.Name, "en", model.Name)
-                            foundScripts = true
-                            totalScriptsDestroyed = totalScriptsDestroyed + 1
-                        end
-                    end
-                end
-                
-                -- Buscar en TODOS los descendientes del modelo (no solo Part)
-                for _, descendant in pairs(model:GetDescendants()) do
-                    searchAndDestroyScripts(descendant)
-                end
-                
-                -- También buscar en el modelo principal
-                searchAndDestroyScripts(model)
-                
-                if not foundScripts then
-                    print("✅ No se encontraron scripts de daño en", model.Name)
-                end
+-- === ELIMINACIÓN ACTIVA ===
+
+-- Elimina scripts peligrosos en un modelo específico
+local function removeDangerousScriptsInModel(model)
+    if not model or not model.Parent then return 0 end
+
+    local count = 0
+    for _, descendant in ipairs(model:GetDescendants()) do
+        -- Eliminar por nombre peligroso
+        if string.find(descendant.Name:lower(), "damage") or
+           descendant.Name == "TakeDamage" or
+           descendant.Name == "TouchInterest" or
+           descendant.Name == "Killer" then
+            safeDestroy(descendant)
+            count += 1
+        end
+
+        -- Eliminar Behaviours.Killer
+        if descendant.Name == "Behaviours" and descendant:FindFirstChild("Killer") then
+            safeDestroy(descendant.Killer)
+            count += 1
+        end
+
+        -- Eliminar scripts peligrosos por contenido
+        if descendant:IsA("Script") or descendant:IsA("LocalScript") or descendant:IsA("ModuleScript") then
+            if isDangerousScript(descendant) then
+                safeDestroy(descendant)
+                count += 1
             end
-        end)
-    end
-    
-    return totalScriptsDestroyed
-end
-
--- Variable para controlar el monitoreo continuo
-local continuousConnection = nil
-
--- Función para eliminar scripts de daño continuamente (detecta nuevos spawns)
-local function startContinuousDamageScriptRemoval()
-    local function removeDamageScriptsFromAllModels()
-        local allModels = getAllModelsRecursively()
-        for _, model in pairs(allModels) do
-            safeCall(function()
-                if model and model.Parent then
-                    -- MÉTODO ULTRA-UNIVERSAL: Buscar scripts de daño en CUALQUIER LUGAR del modelo
-                    local function searchAndDestroyScripts(object)
-                        -- Eliminar scripts específicos conocidos directamente (EXPANDIDO)
-                        local scriptsToRemove = {"Killer", "TakeDamage", "TouchInterest", "LoadScript", "AI Chase", "NPC", "Respawn", "Weld", "Sound"}
-                        for _, scriptName in pairs(scriptsToRemove) do
-                            if object:FindFirstChild(scriptName) then
-                                object[scriptName]:Destroy()
-                                print("💀 Script", scriptName, "eliminado continuamente de", object.Name, "en", model.Name)
-                            end
-                        end
-                        
-                        -- MÉTODO ULTRA-AGRESIVO PARA TAKEDAMAGE Y TOUCHINTEREST (CONTINUO)
-                        for _, child in pairs(object:GetChildren()) do
-                            if child.Name == "TakeDamage" or child.Name == "TouchInterest" then
-                                child:Destroy()
-                                print("💥 FORZADO CONTINUO:", child.Name, "eliminado de", object.Name, "en", model.Name)
-                            end
-                        end
-                        
-                        -- MÉTODO ULTRA-AGRESIVO PARA CUALQUIER COSA CON "DAMAGE" (CONTINUO)
-                        for _, child in pairs(object:GetChildren()) do
-                            if string.find(child.Name:lower(), "damage") then
-                                child:Destroy()
-                                print("💥 DAMAGE ELIMINADO CONTINUO:", child.Name, "de", object.Name, "en", model.Name)
-                            end
-                        end
-                        
-                        -- Eliminar Behaviours.Killer si existe
-                        if object:FindFirstChild("Behaviours") and object.Behaviours:FindFirstChild("Killer") then
-                            object.Behaviours.Killer:Destroy()
-                            print("💀 Behaviours.Killer eliminado continuamente de", object.Name, "en", model.Name)
-                        end
-                        
-                        -- MÉTODO ESPECÍFICO PARA ICICLE ZOMBIE Y SIMILARES (CONTINUO)
-                        if object.Name == "Part" and object.Parent and (string.find(object.Parent.Name:lower(), "zombie") or string.find(object.Parent.Name:lower(), "enemy") or string.find(object.Parent.Name:lower(), "monster")) then
-                            -- Eliminar TODOS los hijos del Part que puedan ser peligrosos
-                            for i = #object:GetChildren(), 1, -1 do
-                                local child = object:GetChildren()[i]
-                                if child and child ~= object then
-                                    child:Destroy()
-                                    print("🧊 Elemento peligroso eliminado continuamente:", child.Name, "de Part en", object.Parent.Name)
-                                end
-                            end
-                        end
-                        
-                        -- MÉTODO ULTRA-AGRESIVO: Eliminar TODOS los scripts del objeto
-                        for _, child in pairs(object:GetChildren()) do
-                            if child:IsA("LocalScript") or child:IsA("Script") or child:IsA("ModuleScript") then
-                                child:Destroy()
-                                print("🗑️ Script eliminado continuamente:", child.Name, "de", object.Name, "en", model.Name)
-                            end
-                        end
-                    end
-                    
-                    -- Buscar en TODOS los descendientes del modelo (no solo Part)
-                    for _, descendant in pairs(model:GetDescendants()) do
-                        searchAndDestroyScripts(descendant)
-                    end
-                    
-                    -- También buscar en el modelo principal
-                    searchAndDestroyScripts(model)
-                end
-            end)
         end
     end
-    
-    -- Ejecutar cada frame para detectar y eliminar scripts de daño de TODOS los modelos
-    continuousConnection = RunService.Heartbeat:Connect(function()
-        safeCall(removeDamageScriptsFromAllModels)
+    return count
+end
+
+-- Escaneo único de toda la workspace
+local function removeAllDangerousScripts()
+    local total = 0
+    local models = getAllModelsRecursively()
+    for _, model in ipairs(models) do
+        total += removeDangerousScriptsInModel(model)
+    end
+    return total
+end
+
+-- === MONITOREO REACTIVO (EFICIENTE) ===
+
+local monitoringEnabled = false
+local monitorThread = nil
+
+local function startReactiveMonitoring()
+    if monitoringEnabled then return end
+    monitoringEnabled = true
+
+    -- Reacciona a nuevos objetos
+    workspace.DescendantAdded:Connect(function(child)
+        if not monitoringEnabled then return end
+
+        -- Eliminar por nombre inmediatamente
+        if child.Name == "TakeDamage" or child.Name == "TouchInterest" or
+           string.find(child.Name:lower(), "damage") then
+            task.delay(0, function() safeDestroy(child) end)
+            return
+        end
+
+        -- Evaluar scripts nuevos
+        if (child:IsA("Script") or child:IsA("LocalScript")) and isDangerousScript(child) then
+            task.delay(0, function() safeDestroy(child) end)
+        end
+    end)
+
+    -- Escaneo periódico ligero (cada 0.5s)
+    monitorThread = task.spawn(function()
+        while monitoringEnabled do
+            removeAllDangerousScripts()
+            task.wait(0.5)
+        end
     end)
 end
 
--- Función para detener el monitoreo continuo
-local function stopContinuousDamageScriptRemoval()
-    if continuousConnection then
-        continuousConnection:Disconnect()
-        continuousConnection = nil
+local function stopReactiveMonitoring()
+    monitoringEnabled = false
+    if monitorThread and coroutine.status(monitorThread) ~= "dead" then
+        task.cancel(monitorThread)
     end
 end
 
--- Crear la ventana de Rayfield
+-- === INTERFAZ RAYFIELD ===
+
 local Window = Rayfield:CreateWindow({
-    Name = "💀 Universal Script Damage Eliminator",
-    LoadingTitle = "Cargando eliminador universal...",
-    LoadingSubtitle = "Preparando eliminación de scripts de daño",
+    Name = "💀 Universal Damage Eliminator",
+    LoadingTitle = "Cargando...",
+    LoadingSubtitle = "Optimizado y seguro",
     ConfigurationSaving = {
         Enabled = true,
-        FolderName = "UniversalScriptEliminator",
+        FolderName = "DamageEliminator",
         FileName = "Config"
     },
-    Discord = {
-        Enabled = false,
-        Invite = "noinvitelink",
-        RememberJoins = true
-    },
+    Discord = { Enabled = false },
     KeySystem = false
 })
 
--- Crear pestañas
-local Tab = Window:CreateTab("💀 Eliminación Universal", 4483362458)
-local StatsTab = Window:CreateTab("📊 Estadísticas", 4483362458)
+local MainTab = Window:CreateTab("🛡️ Eliminación", 4483362458)
 
--- ===== PESTAÑA DE ELIMINACIÓN =====
--- Botón principal para eliminar todos los scripts de daño
-local DestroyButton = Tab:CreateButton({
-    Name = "💀 ELIMINAR TODOS LOS SCRIPTS DE DAÑO",
+MainTab:CreateButton({
+    Name = "🧹 Eliminar Daño (Una vez)",
     Callback = function()
-        print("=== 💀⚔️👆🗑️ INICIANDO ELIMINACIÓN UNIVERSAL ===")
-        safeCall(getOriginalModelNames)
-        local destroyed = safeCall(removeDamageScripts)
-        
+        local count = safeCall(removeAllDangerousScripts)
         Rayfield:Notify({
-            Title = "💀 Eliminación Completada",
-            Content = "Scripts de daño eliminados: " .. (destroyed or 0),
-            Duration = 5,
-            Image = 4483362458,
+            Title = "✅ Eliminación completada",
+            Content = "Scripts peligrosos eliminados: " .. (count or 0),
+            Duration = 4,
+            Image = 4483362458
         })
-        
-        print("🚫 TODOS LOS MODELOS YA NO PUEDEN CAUSAR DAÑO")
-    end,
+    end
 })
 
--- Toggle para monitoreo continuo
-local MonitorToggle = Tab:CreateToggle({
-    Name = "🔄 Monitoreo Continuo Universal",
+local monitorToggle = MainTab:CreateToggle({
+    Name = "👁️ Monitoreo Reactivo",
     CurrentValue = false,
-    Flag = "ContinuousUniversalMonitoring",
-    Callback = function(Value)
-        if Value then
-            print("🔄 Monitoreo continuo UNIVERSAL ACTIVADO")
-            safeCall(startContinuousDamageScriptRemoval)
+    Callback = function(enabled)
+        if enabled then
+            startReactiveMonitoring()
             Rayfield:Notify({
-                Title = "🔄 Monitoreo Universal",
-                Content = "Monitoreo continuo activado - Eliminando scripts de daño automáticamente",
-                Duration = 3,
-                Image = 4483362458,
+                Title = "👁️ Activo",
+                Content = "Monitoreo reactivo iniciado",
+                Duration = 2,
+                Image = 4483362458
             })
         else
-            print("⏹️ Monitoreo continuo DESACTIVADO")
-            safeCall(stopContinuousDamageScriptRemoval)
+            stopReactiveMonitoring()
             Rayfield:Notify({
-                Title = "⏹️ Monitoreo",
-                Content = "Monitoreo continuo desactivado",
-                Duration = 3,
-                Image = 4483362458,
+                Title = "⏹️ Detenido",
+                Content = "Monitoreo reactivo detenido",
+                Duration = 2,
+                Image = 4483362458
             })
         end
-    end,
+    end
 })
 
--- Botón específico para workspace.place DamagePart
-local PlaceDamageButton = Tab:CreateButton({
-    Name = "🏢 ELIMINAR workspace.place DamagePart",
+MainTab:CreateButton({
+    Name = "🚀 Activar Todo",
     Callback = function()
-        local destroyed = safeCall(eliminatePlaceDamageParts)
+        local count = safeCall(removeAllDangerousScripts)
+        monitorToggle:Set(true)
         Rayfield:Notify({
-            Title = "🏢 Place DamagePart",
-            Content = "DamageParts eliminados: " .. (destroyed or 0),
-            Duration = 3,
-            Image = 4483362458,
-        })
-    end,
-})
-
--- Botón específico para IcicleZombie
-local IcicleZombieButton = Tab:CreateButton({
-    Name = "🧊 ELIMINAR IcicleZombie.Part.TakeDamage",
-    Callback = function()
-        local destroyed = safeCall(eliminateIcicleZombieScripts)
-        Rayfield:Notify({
-            Title = "🧊 IcicleZombie",
-            Content = "Scripts eliminados: " .. (destroyed or 0),
-            Duration = 3,
-            Image = 4483362458,
-        })
-    end,
-})
-
--- Botón para eliminar modelos peligrosos completamente
-local DangerousModelsButton = Tab:CreateButton({
-    Name = "💥 ELIMINAR MODELOS PELIGROSOS COMPLETAMENTE",
-    Callback = function()
-        local eliminated = safeCall(eliminateDangerousModels)
-        Rayfield:Notify({
-            Title = "💥 Modelos Eliminados",
-            Content = "Modelos peligrosos eliminados: " .. (eliminated or 0),
-            Duration = 3,
-            Image = 4483362458,
-        })
-    end,
-})
-
--- Botón para activar script completo automáticamente
-local AutoButton = Tab:CreateButton({
-    Name = "🚀 ACTIVAR SCRIPT COMPLETO AUTOMÁTICO",
-    Callback = function()
-        print("=== 💀⚔️👆🗑️ SCRIPT DAMAGE ELIMINATOR REALMENTE UNIVERSAL ACTIVADO ===")
-        safeCall(getOriginalModelNames)
-        safeCall(removeDamageScripts)
-        safeCall(startContinuousDamageScriptRemoval)
-        
-        print("🔍 Procesando TODOS los modelos de TODA la workspace (incluyendo anidados)")
-        print("💀 Script Killer eliminado de CUALQUIER LUGAR del modelo")
-        print("⚔️ Script TakeDamage eliminado de CUALQUIER LUGAR del modelo")
-        print("👆 TouchInterest eliminado de CUALQUIER LUGAR del modelo")
-        print("📜 LoadScript eliminado de CUALQUIER LUGAR del modelo")
-        print("🗑️ TODOS los scripts eliminados de CUALQUIER LUGAR del modelo")
-        print("🎯 Monitorea TODA la workspace continuamente (incluyendo anidados)")
-        print("🚫 TODOS LOS MODELOS YA NO PUEDEN CAUSAR DAÑO - REALMENTE UNIVERSAL")
-        
-        Rayfield:Notify({
-            Title = "🚀 Script Universal Activado",
-            Content = "Eliminación automática y monitoreo continuo activados",
+            Title = "🚀 Todo activo",
+            Content = "Eliminación + monitoreo activado\nScripts eliminados: " .. (count or 0),
             Duration = 5,
-            Image = 4483362458,
+            Image = 4483362458
         })
-    end,
+    end
 })
 
--- Información
-local InfoLabel = Tab:CreateLabel("💡 Información:")
-local InfoLabel2 = Tab:CreateLabel("• Eliminar Scripts: Elimina TODOS los scripts de daño una vez")
-local InfoLabel3 = Tab:CreateLabel("• Modelos Peligrosos: Elimina IcicleZombie y similares COMPLETAMENTE")
-local InfoLabel4 = Tab:CreateLabel("• Monitoreo: Elimina scripts continuamente (recomendado)")
-local InfoLabel5 = Tab:CreateLabel("• Script Completo: Activa todo automáticamente")
-local InfoLabel6 = Tab:CreateLabel("• ✅ UNIVERSAL: Funciona en TODA la workspace")
-local InfoLabel7 = Tab:CreateLabel("• 🎯 Elimina: Killer, TakeDamage, AI Chase, NPC, Respawn, etc.")
-local InfoLabel8 = Tab:CreateLabel("• 💀 También elimina Behaviours.Killer y TODOS los scripts")
+MainTab:CreateLabel("💡 Solo elimina scripts con comportamiento peligroso")
+MainTab:CreateLabel("🔒 Más seguro y menos agresivo que eliminar TODO")
 
--- ===== PESTAÑA DE ESTADÍSTICAS =====
-local StatsLabel = StatsTab:CreateLabel("📊 Estadísticas Universales:")
-local ModelsLabel = StatsTab:CreateLabel("Modelos en workspace: 0")
-local ScriptsLabel = StatsTab:CreateLabel("Scripts encontrados: 0")
-local MonitoringLabel = StatsTab:CreateLabel("Monitoreo continuo: Desactivado")
-
--- Función para actualizar estadísticas
-local function updateStats()
-    local allModels = getAllModelsRecursively()
-    local scriptsCount = 0
-    
-    for _, model in pairs(allModels) do
-        for _, descendant in pairs(model:GetDescendants()) do
-            if descendant:IsA("LocalScript") or descendant:IsA("Script") or descendant:IsA("ModuleScript") then
-                scriptsCount = scriptsCount + 1
-            end
-        end
-    end
-    
-    ModelsLabel:Set("Modelos en workspace: " .. #allModels)
-    ScriptsLabel:Set("Scripts encontrados: " .. scriptsCount)
-    MonitoringLabel:Set("Monitoreo continuo: " .. (continuousConnection and "Activado" or "Desactivado"))
-end
-
--- Actualizar estadísticas cada 2 segundos
-spawn(function()
-    while true do
-        updateStats()
-        wait(2)
-    end
-end)
-
--- Notificación de bienvenida
-Rayfield:Notify({
-    Title = "💀 Universal Script Damage Eliminator",
-    Content = "Script cargado - Listo para eliminar TODOS los scripts de daño universalmente",
-    Duration = 5,
-    Image = 4483362458,
-})
-
-print("💀 Universal Script Damage Eliminator cargado")
-print("🚀 Usa 'ACTIVAR SCRIPT COMPLETO AUTOMÁTICO' para la funcionalidad completa")
-print("🔄 O activa el monitoreo continuo para eliminación automática")
+print("✅ Universal Damage Eliminator v2.0 cargado")
