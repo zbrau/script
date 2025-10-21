@@ -5,12 +5,13 @@ local RunService = game:GetService("RunService")
 -- Configuración
 local hitboxActive = false
 local expansionScale = 3.0
+local hitboxTransparency = 0.8 -- Nueva variable para controlar transparencia
 local checkInterval = 0.01
 local expandedBalls = {}
 local totalProcessed = 0
 local lastCleanup = tick()
 local lastAutoReset = tick()
-local autoResetInterval = 10 -- segundos
+local autoResetInterval = 25
 
 -- Configuración de líneas de visión
 local lineTracersActive = false
@@ -60,7 +61,6 @@ local uiElements = {
     resetText = Drawing.new("Text"),
     statsText = Drawing.new("Text"),
     autoResetText = Drawing.new("Text"),
-    -- Controles de líneas
     lineToggleButton = Drawing.new("Square"),
     lineToggleText = Drawing.new("Text"),
     lineLengthLabel = Drawing.new("Text"),
@@ -68,10 +68,17 @@ local uiElements = {
     lineIncreaseButton = Drawing.new("Square"),
     lineIncreaseText = Drawing.new("Text"),
     lineDecreaseButton = Drawing.new("Square"),
-    lineDecreaseText = Drawing.new("Text")
+    lineDecreaseText = Drawing.new("Text"),
+    -- Controles de transparencia
+    transparencyLabel = Drawing.new("Text"),
+    transparencyValue = Drawing.new("Text"),
+    transparencyIncreaseButton = Drawing.new("Square"),
+    transparencyIncreaseText = Drawing.new("Text"),
+    transparencyDecreaseButton = Drawing.new("Square"),
+    transparencyDecreaseText = Drawing.new("Text")
 }
 
--- Actualizar estadísticas (declarada primero)
+-- Actualizar estadísticas
 local function updateStats()
     local currentCount = 0
     for _ in pairs(expandedBalls) do
@@ -84,7 +91,7 @@ end
 -- Configurar elementos de la UI
 local function setupUI()
     local x, y = uiPosition.X, uiPosition.Y
-    local width, height = 250, 440
+    local width, height = 250, 520 -- Aumentado para los nuevos controles
     
     -- Fondo
     uiElements.background.Visible = uiVisible
@@ -315,6 +322,52 @@ local function setupUI()
     uiElements.lineDecreaseText.Color = textColor
     uiElements.lineDecreaseText.Size = 12
     uiElements.lineDecreaseText.ZIndex = 3
+    
+    -- Control de transparencia de hitbox
+    local transparencyY = separatorY + 80
+    
+    uiElements.transparencyLabel.Visible = uiVisible
+    uiElements.transparencyLabel.Text = "Transparencia:"
+    uiElements.transparencyLabel.Position = Vector2.new(x + 15, transparencyY)
+    uiElements.transparencyLabel.Color = textColor
+    uiElements.transparencyLabel.Size = 14
+    uiElements.transparencyLabel.ZIndex = 2
+    
+    uiElements.transparencyValue.Visible = uiVisible
+    uiElements.transparencyValue.Text = string.format("%.0f%%", hitboxTransparency * 100)
+    uiElements.transparencyValue.Position = Vector2.new(x + 115, transparencyY)
+    uiElements.transparencyValue.Color = accentColor
+    uiElements.transparencyValue.Size = 14
+    uiElements.transparencyValue.ZIndex = 2
+    
+    -- Botones de transparencia
+    uiElements.transparencyIncreaseButton.Visible = uiVisible
+    uiElements.transparencyIncreaseButton.Size = Vector2.new(30, 20)
+    uiElements.transparencyIncreaseButton.Position = Vector2.new(x + 150, transparencyY)
+    uiElements.transparencyIncreaseButton.Color = buttonColor
+    uiElements.transparencyIncreaseButton.Filled = true
+    uiElements.transparencyIncreaseButton.ZIndex = 2
+    
+    uiElements.transparencyIncreaseText.Visible = uiVisible
+    uiElements.transparencyIncreaseText.Text = "+"
+    uiElements.transparencyIncreaseText.Position = Vector2.new(x + 162, transparencyY + 3)
+    uiElements.transparencyIncreaseText.Color = textColor
+    uiElements.transparencyIncreaseText.Size = 12
+    uiElements.transparencyIncreaseText.ZIndex = 3
+    
+    uiElements.transparencyDecreaseButton.Visible = uiVisible
+    uiElements.transparencyDecreaseButton.Size = Vector2.new(30, 20)
+    uiElements.transparencyDecreaseButton.Position = Vector2.new(x + 185, transparencyY)
+    uiElements.transparencyDecreaseButton.Color = buttonColor
+    uiElements.transparencyDecreaseButton.Filled = true
+    uiElements.transparencyDecreaseButton.ZIndex = 2
+    
+    uiElements.transparencyDecreaseText.Visible = uiVisible
+    uiElements.transparencyDecreaseText.Text = "-"
+    uiElements.transparencyDecreaseText.Position = Vector2.new(x + 197, transparencyY + 3)
+    uiElements.transparencyDecreaseText.Color = textColor
+    uiElements.transparencyDecreaseText.Size = 12
+    uiElements.transparencyDecreaseText.ZIndex = 3
 end
 
 -- Verificar si el mouse está sobre un elemento
@@ -325,7 +378,36 @@ local function isMouseOver(element)
            mousePosition.Y >= pos.Y and mousePosition.Y <= pos.Y + size.Y
 end
 
--- Función de expansión de hitbox MEJORADA
+-- FUNCIÓN MEJORADA: Encuentra el MeshPart del balón (compatible con ambas estructuras)
+local function findBallMeshPart(model)
+    -- Primero buscar "Cube.001" (estructura original)
+    local meshPart = model:FindFirstChild("Cube.001")
+    if meshPart and meshPart:IsA("MeshPart") then
+        return meshPart
+    end
+    
+    -- Si ya existe "ExpandedHitbox", buscar el original dentro del modelo
+    local expandedHitbox = model:FindFirstChild("ExpandedHitbox")
+    if expandedHitbox then
+        -- Buscar el MeshPart original (el que NO es ExpandedHitbox)
+        for _, child in ipairs(model:GetChildren()) do
+            if child:IsA("MeshPart") and child.Name ~= "ExpandedHitbox" then
+                return child
+            end
+        end
+    end
+    
+    -- Último intento: buscar cualquier MeshPart
+    for _, child in ipairs(model:GetChildren()) do
+        if child:IsA("MeshPart") then
+            return child
+        end
+    end
+    
+    return nil
+end
+
+-- Función de expansión de hitbox MEJORADA Y UNIVERSAL
 local function expandHitboxes()
     local children = workspace:GetChildren()
     local processed = 0
@@ -334,12 +416,22 @@ local function expandHitboxes()
         local child = children[i]
         if child:IsA("Model") and string.find(child.Name, "CLIENT_BALL_") then
             local ballData = expandedBalls[child.Name]
-            local meshPart = child:FindFirstChild("Cube.001")
             
-            if meshPart and meshPart:IsA("MeshPart") then
+            -- CLAVE: Usar la función universal para encontrar el MeshPart
+            local meshPart = findBallMeshPart(child)
+            
+            if meshPart then
+                -- Verificar si ya existe una ExpandedHitbox
+                local existingHitbox = child:FindFirstChild("ExpandedHitbox")
+                
                 -- Si no está expandida o necesita actualización
-                if not ballData or not ballData.expanded then
+                if not ballData or not ballData.expanded or not existingHitbox then
                     local success = pcall(function()
+                        -- Si ya existe una hitbox vieja, eliminarla
+                        if existingHitbox then
+                            existingHitbox:Destroy()
+                        end
+                        
                         -- Guardar tamaño original
                         local originalSize = ballData and ballData.originalSize or meshPart.Size
                         
@@ -347,12 +439,12 @@ local function expandHitboxes()
                         local hitboxPart = meshPart:Clone()
                         hitboxPart.Name = "ExpandedHitbox"
                         hitboxPart.Size = originalSize * expansionScale
-                        hitboxPart.Transparency = 0.3 -- Completamente invisible
-                        hitboxPart.CanCollide = false -- SIN COLISIONES para el jugador
+                        hitboxPart.Transparency = hitboxTransparency -- Usar variable de transparencia
+                        hitboxPart.CanCollide = false
                         hitboxPart.Massless = true
                         hitboxPart.Material = Enum.Material.ForceField
                         
-                        -- Hacer que SOLO detecte el balón, no empuje al jugador
+                        -- Limpiar TouchInterest
                         if hitboxPart:FindFirstChild("TouchInterest") then
                             hitboxPart.TouchInterest:Destroy()
                         end
@@ -365,7 +457,7 @@ local function expandHitboxes()
                         
                         hitboxPart.Parent = child
                         
-                        -- Mantener el balón original VISIBLE y sin cambios
+                        -- Mantener el balón original visible
                         meshPart.Transparency = 0
                         meshPart.CanCollide = true
                         
@@ -392,12 +484,10 @@ local function expandHitboxes()
                 elseif ballData.expanded and (tick() - ballData.lastCheck) > 2 then
                     ballData.lastCheck = tick()
                     
-                    -- Verificar si la hitbox y el indicador siguen existiendo
                     local hitbox = child:FindFirstChild("ExpandedHitbox")
-                    local indicator = child:FindFirstChild("HitboxIndicator")
                     
-                    if not hitbox or not indicator then
-                        -- Re-expandir si se perdió la hitbox o el indicador
+                    if not hitbox then
+                        -- Re-expandir si se perdió la hitbox
                         ballData.expanded = false
                         print("🔄 Re-expandiendo: " .. child.Name)
                     else
@@ -408,15 +498,9 @@ local function expandHitboxes()
                             hitbox.Size = expectedSize
                         end
                         
-                        if (indicator.Size - expectedSize).Magnitude > 0.5 then
-                            indicator.Size = expectedSize
-                        end
-                        
-                        -- Asegurar que siga sin colisiones
+                        -- Asegurar propiedades correctas
                         hitbox.CanCollide = false
-                        hitbox.Transparency = 1
-                        indicator.CanCollide = false
-                        indicator.Transparency = 0.6
+                        hitbox.Transparency = hitboxTransparency -- Actualizar con valor actual
                     end
                 end
             end
@@ -441,7 +525,6 @@ end
 
 -- Función para resetear hitboxes
 local function resetAllHitboxes()
-    -- Eliminar todas las hitboxes expandidas y sus indicadores visuales
     for ballName, ballData in pairs(expandedBalls) do
         if ballData.hitboxPart and ballData.hitboxPart.Parent then
             ballData.hitboxPart:Destroy()
@@ -465,7 +548,6 @@ end
 -- Crear o actualizar líneas de visión
 local function updateTracerLines()
     if not lineTracersActive then
-        -- Limpiar todas las líneas si está desactivado
         for _, line in pairs(tracerLines) do
             if line and line.Remove then
                 line:Remove()
@@ -484,40 +566,33 @@ local function updateTracerLines()
     local camera = workspace.CurrentCamera
     local existingLines = {}
     
-    -- Buscar todos los jugadores en el workspace
     for _, child in ipairs(workspace:GetChildren()) do
         if child:IsA("Model") and child ~= localPlayer.Character then
             local head = child:FindFirstChild("Head")
             local humanoid = child:FindFirstChild("Humanoid")
             
-            -- Verificar que es un jugador válido (tiene Head y Humanoid)
             if head and humanoid and humanoid.Health > 0 then
                 local playerName = child.Name
                 
-                -- Crear o actualizar línea para este jugador
                 if not tracerLines[playerName] then
                     tracerLines[playerName] = Drawing.new("Line")
                     tracerLines[playerName].Thickness = 2
-                    tracerLines[playerName].Color = Color3.fromRGB(255, 0, 0) -- Rojo
+                    tracerLines[playerName].Color = Color3.fromRGB(255, 0, 0)
                     tracerLines[playerName].Transparency = 0.8
                     tracerLines[playerName].ZIndex = 1
                 end
                 
                 local line = tracerLines[playerName]
                 
-                -- Calcular posición en pantalla
                 local headPos = head.Position
                 local headScreenPos, onScreen = camera:WorldToViewportPoint(headPos)
                 
                 if onScreen then
-                    -- Calcular dirección horizontal (ignorando inclinación vertical)
                     local headCFrame = head.CFrame
                     local lookVector = headCFrame.LookVector
                     
-                    -- Proyectar el vector en el plano horizontal (Y = 0)
                     local horizontalVector = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
                     
-                    -- Si el vector es muy pequeño (mirando directamente arriba/abajo), usar dirección por defecto
                     if horizontalVector.Magnitude < 0.1 then
                         horizontalVector = headCFrame.LookVector
                     end
@@ -526,7 +601,6 @@ local function updateTracerLines()
                     
                     local endScreenPos = camera:WorldToViewportPoint(endPos)
                     
-                    -- Actualizar línea
                     line.From = Vector2.new(headScreenPos.X, headScreenPos.Y)
                     line.To = Vector2.new(endScreenPos.X, endScreenPos.Y)
                     line.Visible = true
@@ -539,7 +613,6 @@ local function updateTracerLines()
         end
     end
     
-    -- Limpiar líneas de jugadores que ya no existen
     for playerName, line in pairs(tracerLines) do
         if not existingLines[playerName] then
             if line and line.Remove then
@@ -552,11 +625,9 @@ end
 
 -- Procesar clicks del mouse
 local function handleMouseClick()
-    -- Botón cerrar (X)
     if isMouseOver(uiElements.closeButton) then
         print("❌ Cerrando script...")
         
-        -- Limpiar todas las hitboxes expandidas y sus indicadores
         for ballName, ballData in pairs(expandedBalls) do
             if ballData.hitboxPart and ballData.hitboxPart.Parent then
                 ballData.hitboxPart:Destroy()
@@ -566,21 +637,18 @@ local function handleMouseClick()
             end
         end
         
-        -- Limpiar todas las líneas de visión
         for _, line in pairs(tracerLines) do
             if line and line.Remove then
                 line:Remove()
             end
         end
         
-        -- Destruir todos los elementos de UI
         for _, element in pairs(uiElements) do
             if element and element.Remove then
                 element:Remove()
             end
         end
         
-        -- Detener el script
         hitboxActive = false
         lineTracersActive = false
         uiVisible = false
@@ -588,14 +656,12 @@ local function handleMouseClick()
         return true
     end
     
-    -- Iniciar drag
     if isMouseOver(uiElements.dragArea) and not isMouseOver(uiElements.closeButton) then
         isDragging = true
         dragOffset = Vector2.new(mousePosition.X - uiPosition.X, mousePosition.Y - uiPosition.Y)
         return
     end
     
-    -- Botón de toggle
     if isMouseOver(uiElements.toggleButton) then
         hitboxActive = not hitboxActive
         uiElements.statusIndicator.Color = hitboxActive and Color3.new(0, 1, 0) or Color3.new(1, 0, 0)
@@ -604,12 +670,10 @@ local function handleMouseClick()
         print(hitboxActive and "🟢 Hitbox ACTIVADO" or "🔴 Hitbox DESACTIVADO")
     end
     
-    -- Botón aumentar tamaño
     if isMouseOver(uiElements.increaseButton) then
         expansionScale = math.min(expansionScale + 0.5, 10.0)
         uiElements.sizeValue.Text = string.format("%.1fx", expansionScale)
         
-        -- Limpiar para re-expandir con nuevo tamaño
         for ballName, ballData in pairs(expandedBalls) do
             if ballData.hitboxPart then
                 ballData.hitboxPart:Destroy()
@@ -623,12 +687,10 @@ local function handleMouseClick()
         print("📏 Tamaño aumentado a: " .. expansionScale .. "x")
     end
     
-    -- Botón disminuir tamaño
     if isMouseOver(uiElements.decreaseButton) then
         expansionScale = math.max(expansionScale - 0.5, 1.0)
         uiElements.sizeValue.Text = string.format("%.1fx", expansionScale)
         
-        -- Limpiar para re-expandir con nuevo tamaño
         for ballName, ballData in pairs(expandedBalls) do
             if ballData.hitboxPart then
                 ballData.hitboxPart:Destroy()
@@ -642,20 +704,17 @@ local function handleMouseClick()
         print("📏 Tamaño disminuido a: " .. expansionScale .. "x")
     end
     
-    -- Botón reset
     if isMouseOver(uiElements.resetButton) then
         resetAllHitboxes()
         print("🔄 Todas las hitboxes reseteadas (manual)")
     end
     
-    -- Botón toggle líneas
     if isMouseOver(uiElements.lineToggleButton) then
         lineTracersActive = not lineTracersActive
         uiElements.lineToggleText.Text = lineTracersActive and "DESACTIVAR Líneas" or "ACTIVAR Líneas"
         print(lineTracersActive and "🟢 Líneas de visión ACTIVADAS" or "🔴 Líneas de visión DESACTIVADAS")
         
         if not lineTracersActive then
-            -- Limpiar líneas al desactivar
             for _, line in pairs(tracerLines) do
                 if line and line.Remove then
                     line:Remove()
@@ -665,18 +724,44 @@ local function handleMouseClick()
         end
     end
     
-    -- Botón aumentar longitud de línea
     if isMouseOver(uiElements.lineIncreaseButton) then
         lineLength = math.min(lineLength + 20, 500)
         uiElements.lineLengthValue.Text = string.format("%d studs", lineLength)
         print("📏 Longitud de línea aumentada a: " .. lineLength .. " studs")
     end
     
-    -- Botón disminuir longitud de línea
     if isMouseOver(uiElements.lineDecreaseButton) then
         lineLength = math.max(lineLength - 20, 20)
         uiElements.lineLengthValue.Text = string.format("%d studs", lineLength)
         print("📏 Longitud de línea disminuida a: " .. lineLength .. " studs")
+    end
+    
+    if isMouseOver(uiElements.transparencyIncreaseButton) then
+        hitboxTransparency = math.min(hitboxTransparency + 0.1, 1.0)
+        uiElements.transparencyValue.Text = string.format("%.0f%%", hitboxTransparency * 100)
+        
+        -- Actualizar todas las hitboxes existentes
+        for ballName, ballData in pairs(expandedBalls) do
+            if ballData.hitboxPart and ballData.hitboxPart.Parent then
+                ballData.hitboxPart.Transparency = hitboxTransparency
+            end
+        end
+        
+        print("👁️ Transparencia aumentada a: " .. math.floor(hitboxTransparency * 100) .. "%")
+    end
+    
+    if isMouseOver(uiElements.transparencyDecreaseButton) then
+        hitboxTransparency = math.max(hitboxTransparency - 0.1, 0.0)
+        uiElements.transparencyValue.Text = string.format("%.0f%%", hitboxTransparency * 100)
+        
+        -- Actualizar todas las hitboxes existentes
+        for ballName, ballData in pairs(expandedBalls) do
+            if ballData.hitboxPart and ballData.hitboxPart.Parent then
+                ballData.hitboxPart.Transparency = hitboxTransparency
+            end
+        end
+        
+        print("👁️ Transparencia disminuida a: " .. math.floor(hitboxTransparency * 100) .. "%")
     end
 end
 
@@ -691,6 +776,8 @@ local function updateHoverEffects()
         uiElements.lineToggleButton.Color = isMouseOver(uiElements.lineToggleButton) and buttonHoverColor or buttonColor
         uiElements.lineIncreaseButton.Color = isMouseOver(uiElements.lineIncreaseButton) and buttonHoverColor or buttonColor
         uiElements.lineDecreaseButton.Color = isMouseOver(uiElements.lineDecreaseButton) and buttonHoverColor or buttonColor
+        uiElements.transparencyIncreaseButton.Color = isMouseOver(uiElements.transparencyIncreaseButton) and buttonHoverColor or buttonColor
+        uiElements.transparencyDecreaseButton.Color = isMouseOver(uiElements.transparencyDecreaseButton) and buttonHoverColor or buttonColor
         
         -- Cursor para drag area
         if isMouseOver(uiElements.dragArea) and not isMouseOver(uiElements.closeButton) then
@@ -707,6 +794,7 @@ print("🎮 UI de Hitbox Cargada")
 print("📌 Arrastra desde la barra superior para mover")
 print("❌ Click en X para cerrar el script")
 print("👁️ Activa las líneas para ver hacia dónde miran los enemigos")
+print("🔍 Ajusta la transparencia para ver las hitboxes expandidas")
 
 local scriptRunning = true
 
@@ -744,17 +832,17 @@ RunService.RenderStepped:Connect(function()
             mousePosition.X - dragOffset.X,
             mousePosition.Y - dragOffset.Y
         )
-        setupUI() -- Actualizar posiciones
+        setupUI()
     end
     
     -- Actualizar timer de auto-reset en la UI
     local timeUntilReset = math.max(0, autoResetInterval - (tick() - lastAutoReset))
     uiElements.autoResetText.Text = string.format("Auto-reset: %.0fs", timeUntilReset)
     
-    -- Auto-reset cada 30 segundos
+    -- Auto-reset cada X segundos
     if tick() - lastAutoReset >= autoResetInterval then
         resetAllHitboxes()
-        print("🔄 Auto-reset ejecutado (cada 30s)")
+        print("🔄 Auto-reset ejecutado (cada " .. autoResetInterval .. "s)")
     end
     
     -- Actualizar efectos hover
