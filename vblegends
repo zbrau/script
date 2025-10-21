@@ -1,0 +1,774 @@
+local workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+-- Configuración
+local hitboxActive = false
+local expansionScale = 3.0
+local checkInterval = 0.01
+local expandedBalls = {}
+local totalProcessed = 0
+local lastCleanup = tick()
+local lastAutoReset = tick()
+local autoResetInterval = 10 -- segundos
+
+-- Configuración de líneas de visión
+local lineTracersActive = false
+local lineLength = 50
+local tracerLines = {}
+
+-- Estado de la UI
+local uiVisible = true
+local mousePosition = Vector2.new(0, 0)
+local mousePressed = false
+local lastMouseState = false
+
+-- Estado de drag
+local isDragging = false
+local dragOffset = Vector2.new(0, 0)
+local uiPosition = Vector2.new(50, 50)
+
+-- Colores
+local backgroundColor = Color3.fromRGB(30, 30, 40)
+local accentColor = Color3.fromRGB(106, 0, 255)
+local textColor = Color3.fromRGB(255, 255, 255)
+local buttonColor = Color3.fromRGB(50, 50, 60)
+local buttonHoverColor = Color3.fromRGB(70, 70, 80)
+local closeButtonColor = Color3.fromRGB(200, 50, 50)
+local closeButtonHoverColor = Color3.fromRGB(255, 70, 70)
+
+-- Elementos de Drawing
+local uiElements = {
+    background = Drawing.new("Square"),
+    dragArea = Drawing.new("Square"),
+    title = Drawing.new("Text"),
+    closeButton = Drawing.new("Square"),
+    closeText = Drawing.new("Text"),
+    statusText = Drawing.new("Text"),
+    statusIndicator = Drawing.new("Circle"),
+    toggleButton = Drawing.new("Square"),
+    toggleText = Drawing.new("Text"),
+    sizeLabel = Drawing.new("Text"),
+    sizeValue = Drawing.new("Text"),
+    increaseButton = Drawing.new("Square"),
+    increaseText = Drawing.new("Text"),
+    decreaseButton = Drawing.new("Square"),
+    decreaseText = Drawing.new("Text"),
+    speedLabel = Drawing.new("Text"),
+    speedValue = Drawing.new("Text"),
+    resetButton = Drawing.new("Square"),
+    resetText = Drawing.new("Text"),
+    statsText = Drawing.new("Text"),
+    autoResetText = Drawing.new("Text"),
+    -- Controles de líneas
+    lineToggleButton = Drawing.new("Square"),
+    lineToggleText = Drawing.new("Text"),
+    lineLengthLabel = Drawing.new("Text"),
+    lineLengthValue = Drawing.new("Text"),
+    lineIncreaseButton = Drawing.new("Square"),
+    lineIncreaseText = Drawing.new("Text"),
+    lineDecreaseButton = Drawing.new("Square"),
+    lineDecreaseText = Drawing.new("Text")
+}
+
+-- Actualizar estadísticas (declarada primero)
+local function updateStats()
+    local currentCount = 0
+    for _ in pairs(expandedBalls) do
+        currentCount = currentCount + 1
+    end
+    
+    uiElements.statsText.Text = string.format("Pelotas: %d | Total: %d", currentCount, totalProcessed)
+end
+
+-- Configurar elementos de la UI
+local function setupUI()
+    local x, y = uiPosition.X, uiPosition.Y
+    local width, height = 250, 440
+    
+    -- Fondo
+    uiElements.background.Visible = uiVisible
+    uiElements.background.Size = Vector2.new(width, height)
+    uiElements.background.Position = Vector2.new(x, y)
+    uiElements.background.Color = backgroundColor
+    uiElements.background.Filled = true
+    uiElements.background.Transparency = 0.9
+    uiElements.background.Thickness = 2
+    uiElements.background.ZIndex = 1
+    
+    -- Área de drag (barra superior)
+    uiElements.dragArea.Visible = uiVisible
+    uiElements.dragArea.Size = Vector2.new(width - 40, 30)
+    uiElements.dragArea.Position = Vector2.new(x, y)
+    uiElements.dragArea.Color = accentColor
+    uiElements.dragArea.Filled = true
+    uiElements.dragArea.Transparency = 0.7
+    uiElements.dragArea.ZIndex = 2
+    
+    -- Título
+    uiElements.title.Visible = uiVisible
+    uiElements.title.Text = "Hitbox Controller"
+    uiElements.title.Position = Vector2.new(x + 10, y + 8)
+    uiElements.title.Color = textColor
+    uiElements.title.Size = 16
+    uiElements.title.ZIndex = 3
+    
+    -- Botón cerrar (X)
+    uiElements.closeButton.Visible = uiVisible
+    uiElements.closeButton.Size = Vector2.new(30, 30)
+    uiElements.closeButton.Position = Vector2.new(x + width - 40, y)
+    uiElements.closeButton.Color = closeButtonColor
+    uiElements.closeButton.Filled = true
+    uiElements.closeButton.Transparency = 0.8
+    uiElements.closeButton.ZIndex = 2
+    
+    uiElements.closeText.Visible = uiVisible
+    uiElements.closeText.Text = "X"
+    uiElements.closeText.Position = Vector2.new(x + width - 32, y + 8)
+    uiElements.closeText.Color = textColor
+    uiElements.closeText.Size = 16
+    uiElements.closeText.ZIndex = 3
+    
+    -- Indicador de estado
+    uiElements.statusIndicator.Visible = uiVisible
+    uiElements.statusIndicator.Position = Vector2.new(x + width - 25, y + 45)
+    uiElements.statusIndicator.Radius = 6
+    uiElements.statusIndicator.Filled = true
+    uiElements.statusIndicator.Color = hitboxActive and Color3.new(0, 1, 0) or Color3.new(1, 0, 0)
+    uiElements.statusIndicator.ZIndex = 2
+    
+    -- Texto de estado
+    uiElements.statusText.Visible = uiVisible
+    uiElements.statusText.Text = "Estado: " .. (hitboxActive and "ACTIVO" or "INACTIVO")
+    uiElements.statusText.Position = Vector2.new(x + 15, y + 40)
+    uiElements.statusText.Color = textColor
+    uiElements.statusText.Size = 14
+    uiElements.statusText.ZIndex = 2
+    
+    -- Botón de toggle
+    uiElements.toggleButton.Visible = uiVisible
+    uiElements.toggleButton.Size = Vector2.new(200, 30)
+    uiElements.toggleButton.Position = Vector2.new(x + 25, y + 70)
+    uiElements.toggleButton.Color = buttonColor
+    uiElements.toggleButton.Filled = true
+    uiElements.toggleButton.Transparency = 0.8
+    uiElements.toggleButton.ZIndex = 2
+    
+    uiElements.toggleText.Visible = uiVisible
+    uiElements.toggleText.Text = hitboxActive and "DESACTIVAR Hitbox" or "ACTIVAR Hitbox"
+    uiElements.toggleText.Position = Vector2.new(x + 75, y + 77)
+    uiElements.toggleText.Color = textColor
+    uiElements.toggleText.Size = 14
+    uiElements.toggleText.ZIndex = 3
+    
+    -- Control de tamaño
+    uiElements.sizeLabel.Visible = uiVisible
+    uiElements.sizeLabel.Text = "Tamaño:"
+    uiElements.sizeLabel.Position = Vector2.new(x + 15, y + 115)
+    uiElements.sizeLabel.Color = textColor
+    uiElements.sizeLabel.Size = 14
+    uiElements.sizeLabel.ZIndex = 2
+    
+    uiElements.sizeValue.Visible = uiVisible
+    uiElements.sizeValue.Text = string.format("%.1fx", expansionScale)
+    uiElements.sizeValue.Position = Vector2.new(x + 80, y + 115)
+    uiElements.sizeValue.Color = accentColor
+    uiElements.sizeValue.Size = 14
+    uiElements.sizeValue.ZIndex = 2
+    
+    -- Botones de tamaño
+    uiElements.increaseButton.Visible = uiVisible
+    uiElements.increaseButton.Size = Vector2.new(30, 20)
+    uiElements.increaseButton.Position = Vector2.new(x + 150, y + 115)
+    uiElements.increaseButton.Color = buttonColor
+    uiElements.increaseButton.Filled = true
+    uiElements.increaseButton.ZIndex = 2
+    
+    uiElements.increaseText.Visible = uiVisible
+    uiElements.increaseText.Text = "+"
+    uiElements.increaseText.Position = Vector2.new(x + 162, y + 118)
+    uiElements.increaseText.Color = textColor
+    uiElements.increaseText.Size = 12
+    uiElements.increaseText.ZIndex = 3
+    
+    uiElements.decreaseButton.Visible = uiVisible
+    uiElements.decreaseButton.Size = Vector2.new(30, 20)
+    uiElements.decreaseButton.Position = Vector2.new(x + 185, y + 115)
+    uiElements.decreaseButton.Color = buttonColor
+    uiElements.decreaseButton.Filled = true
+    uiElements.decreaseButton.ZIndex = 2
+    
+    uiElements.decreaseText.Visible = uiVisible
+    uiElements.decreaseText.Text = "-"
+    uiElements.decreaseText.Position = Vector2.new(x + 197, y + 118)
+    uiElements.decreaseText.Color = textColor
+    uiElements.decreaseText.Size = 12
+    uiElements.decreaseText.ZIndex = 3
+    
+    -- Control de velocidad
+    uiElements.speedLabel.Visible = uiVisible
+    uiElements.speedLabel.Text = "Velocidad:"
+    uiElements.speedLabel.Position = Vector2.new(x + 15, y + 145)
+    uiElements.speedLabel.Color = textColor
+    uiElements.speedLabel.Size = 14
+    uiElements.speedLabel.ZIndex = 2
+    
+    uiElements.speedValue.Visible = uiVisible
+    uiElements.speedValue.Text = string.format("%.2fs", checkInterval)
+    uiElements.speedValue.Position = Vector2.new(x + 85, y + 145)
+    uiElements.speedValue.Color = accentColor
+    uiElements.speedValue.Size = 14
+    uiElements.speedValue.ZIndex = 2
+    
+    -- Botón de reset
+    uiElements.resetButton.Visible = uiVisible
+    uiElements.resetButton.Size = Vector2.new(200, 25)
+    uiElements.resetButton.Position = Vector2.new(x + 25, y + 175)
+    uiElements.resetButton.Color = buttonColor
+    uiElements.resetButton.Filled = true
+    uiElements.resetButton.Transparency = 0.8
+    uiElements.resetButton.ZIndex = 2
+    
+    uiElements.resetText.Visible = uiVisible
+    uiElements.resetText.Text = "RESET Hitboxes"
+    uiElements.resetText.Position = Vector2.new(x + 75, y + 181)
+    uiElements.resetText.Color = textColor
+    uiElements.resetText.Size = 12
+    uiElements.resetText.ZIndex = 3
+    
+    -- Estadísticas
+    uiElements.statsText.Visible = uiVisible
+    updateStats()
+    uiElements.statsText.Position = Vector2.new(x + 15, y + 210)
+    uiElements.statsText.Color = textColor
+    uiElements.statsText.Size = 12
+    uiElements.statsText.ZIndex = 2
+    
+    -- Auto-reset timer
+    local timeUntilReset = math.max(0, autoResetInterval - (tick() - lastAutoReset))
+    uiElements.autoResetText.Visible = uiVisible
+    uiElements.autoResetText.Text = string.format("Auto-reset: %.0fs", timeUntilReset)
+    uiElements.autoResetText.Position = Vector2.new(x + 15, y + 230)
+    uiElements.autoResetText.Color = Color3.fromRGB(150, 150, 150)
+    uiElements.autoResetText.Size = 11
+    uiElements.autoResetText.ZIndex = 2
+    
+    -- Separador visual
+    local separatorY = y + 260
+    
+    -- Botón de toggle líneas
+    uiElements.lineToggleButton.Visible = uiVisible
+    uiElements.lineToggleButton.Size = Vector2.new(200, 30)
+    uiElements.lineToggleButton.Position = Vector2.new(x + 25, separatorY)
+    uiElements.lineToggleButton.Color = buttonColor
+    uiElements.lineToggleButton.Filled = true
+    uiElements.lineToggleButton.Transparency = 0.8
+    uiElements.lineToggleButton.ZIndex = 2
+    
+    uiElements.lineToggleText.Visible = uiVisible
+    uiElements.lineToggleText.Text = lineTracersActive and "DESACTIVAR Líneas" or "ACTIVAR Líneas"
+    uiElements.lineToggleText.Position = Vector2.new(x + 75, separatorY + 7)
+    uiElements.lineToggleText.Color = textColor
+    uiElements.lineToggleText.Size = 14
+    uiElements.lineToggleText.ZIndex = 3
+    
+    -- Control de longitud de línea
+    uiElements.lineLengthLabel.Visible = uiVisible
+    uiElements.lineLengthLabel.Text = "Longitud:"
+    uiElements.lineLengthLabel.Position = Vector2.new(x + 15, separatorY + 45)
+    uiElements.lineLengthLabel.Color = textColor
+    uiElements.lineLengthLabel.Size = 14
+    uiElements.lineLengthLabel.ZIndex = 2
+    
+    uiElements.lineLengthValue.Visible = uiVisible
+    uiElements.lineLengthValue.Text = string.format("%d studs", lineLength)
+    uiElements.lineLengthValue.Position = Vector2.new(x + 85, separatorY + 45)
+    uiElements.lineLengthValue.Color = accentColor
+    uiElements.lineLengthValue.Size = 14
+    uiElements.lineLengthValue.ZIndex = 2
+    
+    -- Botones de longitud
+    uiElements.lineIncreaseButton.Visible = uiVisible
+    uiElements.lineIncreaseButton.Size = Vector2.new(30, 20)
+    uiElements.lineIncreaseButton.Position = Vector2.new(x + 150, separatorY + 45)
+    uiElements.lineIncreaseButton.Color = buttonColor
+    uiElements.lineIncreaseButton.Filled = true
+    uiElements.lineIncreaseButton.ZIndex = 2
+    
+    uiElements.lineIncreaseText.Visible = uiVisible
+    uiElements.lineIncreaseText.Text = "+"
+    uiElements.lineIncreaseText.Position = Vector2.new(x + 162, separatorY + 48)
+    uiElements.lineIncreaseText.Color = textColor
+    uiElements.lineIncreaseText.Size = 12
+    uiElements.lineIncreaseText.ZIndex = 3
+    
+    uiElements.lineDecreaseButton.Visible = uiVisible
+    uiElements.lineDecreaseButton.Size = Vector2.new(30, 20)
+    uiElements.lineDecreaseButton.Position = Vector2.new(x + 185, separatorY + 45)
+    uiElements.lineDecreaseButton.Color = buttonColor
+    uiElements.lineDecreaseButton.Filled = true
+    uiElements.lineDecreaseButton.ZIndex = 2
+    
+    uiElements.lineDecreaseText.Visible = uiVisible
+    uiElements.lineDecreaseText.Text = "-"
+    uiElements.lineDecreaseText.Position = Vector2.new(x + 197, separatorY + 48)
+    uiElements.lineDecreaseText.Color = textColor
+    uiElements.lineDecreaseText.Size = 12
+    uiElements.lineDecreaseText.ZIndex = 3
+end
+
+-- Verificar si el mouse está sobre un elemento
+local function isMouseOver(element)
+    local pos = element.Position
+    local size = element.Size
+    return mousePosition.X >= pos.X and mousePosition.X <= pos.X + size.X and
+           mousePosition.Y >= pos.Y and mousePosition.Y <= pos.Y + size.Y
+end
+
+-- Función de expansión de hitbox MEJORADA
+local function expandHitboxes()
+    local children = workspace:GetChildren()
+    local processed = 0
+    
+    for i = 1, #children do
+        local child = children[i]
+        if child:IsA("Model") and string.find(child.Name, "CLIENT_BALL_") then
+            local ballData = expandedBalls[child.Name]
+            local meshPart = child:FindFirstChild("Cube.001")
+            
+            if meshPart and meshPart:IsA("MeshPart") then
+                -- Si no está expandida o necesita actualización
+                if not ballData or not ballData.expanded then
+                    local success = pcall(function()
+                        -- Guardar tamaño original
+                        local originalSize = ballData and ballData.originalSize or meshPart.Size
+                        
+                        -- Crear hitbox invisible expandida
+                        local hitboxPart = meshPart:Clone()
+                        hitboxPart.Name = "ExpandedHitbox"
+                        hitboxPart.Size = originalSize * expansionScale
+                        hitboxPart.Transparency = 0.3 -- Completamente invisible
+                        hitboxPart.CanCollide = false -- SIN COLISIONES para el jugador
+                        hitboxPart.Massless = true
+                        hitboxPart.Material = Enum.Material.ForceField
+                        
+                        -- Hacer que SOLO detecte el balón, no empuje al jugador
+                        if hitboxPart:FindFirstChild("TouchInterest") then
+                            hitboxPart.TouchInterest:Destroy()
+                        end
+                        
+                        -- Soldar la hitbox invisible al balón original
+                        local weld = Instance.new("WeldConstraint")
+                        weld.Part0 = meshPart
+                        weld.Part1 = hitboxPart
+                        weld.Parent = hitboxPart
+                        
+                        hitboxPart.Parent = child
+                        
+                        -- Mantener el balón original VISIBLE y sin cambios
+                        meshPart.Transparency = 0
+                        meshPart.CanCollide = true
+                        
+                        -- Guardar datos
+                        expandedBalls[child.Name] = {
+                            model = child,
+                            originalPart = meshPart,
+                            hitboxPart = hitboxPart,
+                            originalSize = originalSize,
+                            expanded = true,
+                            timestamp = tick(),
+                            lastCheck = tick()
+                        }
+                        
+                        totalProcessed = totalProcessed + 1
+                        processed = processed + 1
+                    end)
+                    
+                    if not success and ballData then
+                        ballData.expanded = false
+                    end
+                    
+                -- Verificar integridad cada 2 segundos
+                elseif ballData.expanded and (tick() - ballData.lastCheck) > 2 then
+                    ballData.lastCheck = tick()
+                    
+                    -- Verificar si la hitbox y el indicador siguen existiendo
+                    local hitbox = child:FindFirstChild("ExpandedHitbox")
+                    local indicator = child:FindFirstChild("HitboxIndicator")
+                    
+                    if not hitbox or not indicator then
+                        -- Re-expandir si se perdió la hitbox o el indicador
+                        ballData.expanded = false
+                        print("🔄 Re-expandiendo: " .. child.Name)
+                    else
+                        -- Verificar tamaño correcto
+                        local expectedSize = ballData.originalSize * expansionScale
+                        
+                        if (hitbox.Size - expectedSize).Magnitude > 0.5 then
+                            hitbox.Size = expectedSize
+                        end
+                        
+                        if (indicator.Size - expectedSize).Magnitude > 0.5 then
+                            indicator.Size = expectedSize
+                        end
+                        
+                        -- Asegurar que siga sin colisiones
+                        hitbox.CanCollide = false
+                        hitbox.Transparency = 1
+                        indicator.CanCollide = false
+                        indicator.Transparency = 0.6
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Limpieza cada 5 segundos
+    if tick() - lastCleanup > 5 then
+        lastCleanup = tick()
+        for ballName, ballData in pairs(expandedBalls) do
+            if not workspace:FindFirstChild(ballName) then
+                expandedBalls[ballName] = nil
+                print("🗑️ Limpiado: " .. ballName)
+            end
+        end
+    end
+    
+    if processed > 0 then
+        updateStats()
+    end
+end
+
+-- Función para resetear hitboxes
+local function resetAllHitboxes()
+    -- Eliminar todas las hitboxes expandidas y sus indicadores visuales
+    for ballName, ballData in pairs(expandedBalls) do
+        if ballData.hitboxPart and ballData.hitboxPart.Parent then
+            ballData.hitboxPart:Destroy()
+        end
+        if ballData.visualIndicator and ballData.visualIndicator.Parent then
+            ballData.visualIndicator:Destroy()
+        end
+    end
+    
+    expandedBalls = {}
+    totalProcessed = 0
+    lastAutoReset = tick()
+    updateStats()
+end
+
+-- Obtener el jugador local
+local function getLocalPlayer()
+    return game:GetService("Players").LocalPlayer
+end
+
+-- Crear o actualizar líneas de visión
+local function updateTracerLines()
+    if not lineTracersActive then
+        -- Limpiar todas las líneas si está desactivado
+        for _, line in pairs(tracerLines) do
+            if line and line.Remove then
+                line:Remove()
+            end
+        end
+        tracerLines = {}
+        return
+    end
+    
+    local localPlayer = getLocalPlayer()
+    if not localPlayer or not localPlayer.Character then return end
+    
+    local localHead = localPlayer.Character:FindFirstChild("Head")
+    if not localHead then return end
+    
+    local camera = workspace.CurrentCamera
+    local existingLines = {}
+    
+    -- Buscar todos los jugadores en el workspace
+    for _, child in ipairs(workspace:GetChildren()) do
+        if child:IsA("Model") and child ~= localPlayer.Character then
+            local head = child:FindFirstChild("Head")
+            local humanoid = child:FindFirstChild("Humanoid")
+            
+            -- Verificar que es un jugador válido (tiene Head y Humanoid)
+            if head and humanoid and humanoid.Health > 0 then
+                local playerName = child.Name
+                
+                -- Crear o actualizar línea para este jugador
+                if not tracerLines[playerName] then
+                    tracerLines[playerName] = Drawing.new("Line")
+                    tracerLines[playerName].Thickness = 2
+                    tracerLines[playerName].Color = Color3.fromRGB(255, 0, 0) -- Rojo
+                    tracerLines[playerName].Transparency = 0.8
+                    tracerLines[playerName].ZIndex = 1
+                end
+                
+                local line = tracerLines[playerName]
+                
+                -- Calcular posición en pantalla
+                local headPos = head.Position
+                local headScreenPos, onScreen = camera:WorldToViewportPoint(headPos)
+                
+                if onScreen then
+                    -- Calcular dirección horizontal (ignorando inclinación vertical)
+                    local headCFrame = head.CFrame
+                    local lookVector = headCFrame.LookVector
+                    
+                    -- Proyectar el vector en el plano horizontal (Y = 0)
+                    local horizontalVector = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
+                    
+                    -- Si el vector es muy pequeño (mirando directamente arriba/abajo), usar dirección por defecto
+                    if horizontalVector.Magnitude < 0.1 then
+                        horizontalVector = headCFrame.LookVector
+                    end
+                    
+                    local endPos = headPos + (horizontalVector * lineLength)
+                    
+                    local endScreenPos = camera:WorldToViewportPoint(endPos)
+                    
+                    -- Actualizar línea
+                    line.From = Vector2.new(headScreenPos.X, headScreenPos.Y)
+                    line.To = Vector2.new(endScreenPos.X, endScreenPos.Y)
+                    line.Visible = true
+                else
+                    line.Visible = false
+                end
+                
+                existingLines[playerName] = true
+            end
+        end
+    end
+    
+    -- Limpiar líneas de jugadores que ya no existen
+    for playerName, line in pairs(tracerLines) do
+        if not existingLines[playerName] then
+            if line and line.Remove then
+                line:Remove()
+            end
+            tracerLines[playerName] = nil
+        end
+    end
+end
+
+-- Procesar clicks del mouse
+local function handleMouseClick()
+    -- Botón cerrar (X)
+    if isMouseOver(uiElements.closeButton) then
+        print("❌ Cerrando script...")
+        
+        -- Limpiar todas las hitboxes expandidas y sus indicadores
+        for ballName, ballData in pairs(expandedBalls) do
+            if ballData.hitboxPart and ballData.hitboxPart.Parent then
+                ballData.hitboxPart:Destroy()
+            end
+            if ballData.visualIndicator and ballData.visualIndicator.Parent then
+                ballData.visualIndicator:Destroy()
+            end
+        end
+        
+        -- Limpiar todas las líneas de visión
+        for _, line in pairs(tracerLines) do
+            if line and line.Remove then
+                line:Remove()
+            end
+        end
+        
+        -- Destruir todos los elementos de UI
+        for _, element in pairs(uiElements) do
+            if element and element.Remove then
+                element:Remove()
+            end
+        end
+        
+        -- Detener el script
+        hitboxActive = false
+        lineTracersActive = false
+        uiVisible = false
+        print("✅ Script cerrado correctamente")
+        return true
+    end
+    
+    -- Iniciar drag
+    if isMouseOver(uiElements.dragArea) and not isMouseOver(uiElements.closeButton) then
+        isDragging = true
+        dragOffset = Vector2.new(mousePosition.X - uiPosition.X, mousePosition.Y - uiPosition.Y)
+        return
+    end
+    
+    -- Botón de toggle
+    if isMouseOver(uiElements.toggleButton) then
+        hitboxActive = not hitboxActive
+        uiElements.statusIndicator.Color = hitboxActive and Color3.new(0, 1, 0) or Color3.new(1, 0, 0)
+        uiElements.statusText.Text = "Estado: " .. (hitboxActive and "ACTIVO" or "INACTIVO")
+        uiElements.toggleText.Text = hitboxActive and "DESACTIVAR Hitbox" or "ACTIVAR Hitbox"
+        print(hitboxActive and "🟢 Hitbox ACTIVADO" or "🔴 Hitbox DESACTIVADO")
+    end
+    
+    -- Botón aumentar tamaño
+    if isMouseOver(uiElements.increaseButton) then
+        expansionScale = math.min(expansionScale + 0.5, 10.0)
+        uiElements.sizeValue.Text = string.format("%.1fx", expansionScale)
+        
+        -- Limpiar para re-expandir con nuevo tamaño
+        for ballName, ballData in pairs(expandedBalls) do
+            if ballData.hitboxPart then
+                ballData.hitboxPart:Destroy()
+            end
+            if ballData.visualIndicator then
+                ballData.visualIndicator:Destroy()
+            end
+            ballData.expanded = false
+        end
+        
+        print("📏 Tamaño aumentado a: " .. expansionScale .. "x")
+    end
+    
+    -- Botón disminuir tamaño
+    if isMouseOver(uiElements.decreaseButton) then
+        expansionScale = math.max(expansionScale - 0.5, 1.0)
+        uiElements.sizeValue.Text = string.format("%.1fx", expansionScale)
+        
+        -- Limpiar para re-expandir con nuevo tamaño
+        for ballName, ballData in pairs(expandedBalls) do
+            if ballData.hitboxPart then
+                ballData.hitboxPart:Destroy()
+            end
+            if ballData.visualIndicator then
+                ballData.visualIndicator:Destroy()
+            end
+            ballData.expanded = false
+        end
+        
+        print("📏 Tamaño disminuido a: " .. expansionScale .. "x")
+    end
+    
+    -- Botón reset
+    if isMouseOver(uiElements.resetButton) then
+        resetAllHitboxes()
+        print("🔄 Todas las hitboxes reseteadas (manual)")
+    end
+    
+    -- Botón toggle líneas
+    if isMouseOver(uiElements.lineToggleButton) then
+        lineTracersActive = not lineTracersActive
+        uiElements.lineToggleText.Text = lineTracersActive and "DESACTIVAR Líneas" or "ACTIVAR Líneas"
+        print(lineTracersActive and "🟢 Líneas de visión ACTIVADAS" or "🔴 Líneas de visión DESACTIVADAS")
+        
+        if not lineTracersActive then
+            -- Limpiar líneas al desactivar
+            for _, line in pairs(tracerLines) do
+                if line and line.Remove then
+                    line:Remove()
+                end
+            end
+            tracerLines = {}
+        end
+    end
+    
+    -- Botón aumentar longitud de línea
+    if isMouseOver(uiElements.lineIncreaseButton) then
+        lineLength = math.min(lineLength + 20, 500)
+        uiElements.lineLengthValue.Text = string.format("%d studs", lineLength)
+        print("📏 Longitud de línea aumentada a: " .. lineLength .. " studs")
+    end
+    
+    -- Botón disminuir longitud de línea
+    if isMouseOver(uiElements.lineDecreaseButton) then
+        lineLength = math.max(lineLength - 20, 20)
+        uiElements.lineLengthValue.Text = string.format("%d studs", lineLength)
+        print("📏 Longitud de línea disminuida a: " .. lineLength .. " studs")
+    end
+end
+
+-- Actualizar efectos hover
+local function updateHoverEffects()
+    if uiVisible then
+        uiElements.toggleButton.Color = isMouseOver(uiElements.toggleButton) and buttonHoverColor or buttonColor
+        uiElements.increaseButton.Color = isMouseOver(uiElements.increaseButton) and buttonHoverColor or buttonColor
+        uiElements.decreaseButton.Color = isMouseOver(uiElements.decreaseButton) and buttonHoverColor or buttonColor
+        uiElements.resetButton.Color = isMouseOver(uiElements.resetButton) and buttonHoverColor or buttonColor
+        uiElements.closeButton.Color = isMouseOver(uiElements.closeButton) and closeButtonHoverColor or closeButtonColor
+        uiElements.lineToggleButton.Color = isMouseOver(uiElements.lineToggleButton) and buttonHoverColor or buttonColor
+        uiElements.lineIncreaseButton.Color = isMouseOver(uiElements.lineIncreaseButton) and buttonHoverColor or buttonColor
+        uiElements.lineDecreaseButton.Color = isMouseOver(uiElements.lineDecreaseButton) and buttonHoverColor or buttonColor
+        
+        -- Cursor para drag area
+        if isMouseOver(uiElements.dragArea) and not isMouseOver(uiElements.closeButton) then
+            uiElements.dragArea.Transparency = 0.5
+        else
+            uiElements.dragArea.Transparency = 0.7
+        end
+    end
+end
+
+-- Inicializar UI
+setupUI()
+print("🎮 UI de Hitbox Cargada")
+print("📌 Arrastra desde la barra superior para mover")
+print("❌ Click en X para cerrar el script")
+print("👁️ Activa las líneas para ver hacia dónde miran los enemigos")
+
+local scriptRunning = true
+
+-- Conectar eventos del mouse
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not scriptRunning then return end
+    
+    if input.UserInputType == Enum.UserInputType.MouseButton1 and not gameProcessed then
+        if uiVisible then
+            local closed = handleMouseClick()
+            if closed then
+                scriptRunning = false
+            end
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        isDragging = false
+    end
+end)
+
+-- Loop principal usando RunService
+RunService.RenderStepped:Connect(function()
+    if not scriptRunning then return end
+    
+    -- Actualizar posición del mouse
+    local mouse = UserInputService:GetMouseLocation()
+    mousePosition = Vector2.new(mouse.X, mouse.Y)
+    
+    -- Manejar drag
+    if isDragging then
+        uiPosition = Vector2.new(
+            mousePosition.X - dragOffset.X,
+            mousePosition.Y - dragOffset.Y
+        )
+        setupUI() -- Actualizar posiciones
+    end
+    
+    -- Actualizar timer de auto-reset en la UI
+    local timeUntilReset = math.max(0, autoResetInterval - (tick() - lastAutoReset))
+    uiElements.autoResetText.Text = string.format("Auto-reset: %.0fs", timeUntilReset)
+    
+    -- Auto-reset cada 30 segundos
+    if tick() - lastAutoReset >= autoResetInterval then
+        resetAllHitboxes()
+        print("🔄 Auto-reset ejecutado (cada 30s)")
+    end
+    
+    -- Actualizar efectos hover
+    updateHoverEffects()
+    
+    -- Expansión de hitboxes si está activo
+    if hitboxActive then
+        expandHitboxes()
+    end
+    
+    -- Actualizar líneas de visión si está activo
+    if lineTracersActive then
+        updateTracerLines()
+    end
+end)
+
+print("✅ Script cargado correctamente")
