@@ -1,0 +1,830 @@
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local VirtualUser = game:GetService("VirtualUser")
+local StarterGui = game:GetService("StarterGui")
+
+local LocalPlayer = Players.LocalPlayer
+local SaveFileName = "TycoonManagerConfig_V23.json"
+
+local Config = {
+    AutoCollect = false,
+    AutoBuyPCs = false,
+    AutoBuyHackers = false,
+    TeleportDelay = 0.25,
+    ReturnToStart = true,
+    ClicksPorPC = 3,
+    BuyDelay = 0.1, 
+    ScanSpeed = 0.5, 
+    SelectedPCs = {},
+    SelectedHackers = {},
+    UIReferencesPCs = {},
+    UIReferencesHackers = {},
+    Language = "ESP"
+}
+
+local LangData = {
+    Title = {ESP = "MANAGER V23", ENG = "MANAGER V23"},
+    AutoFarmOn = {ESP = "AUTO FARM: ENCENDIDO", ENG = "AUTO FARM: ON"},
+    AutoFarmOff = {ESP = "AUTO FARM: APAGADO", ENG = "AUTO FARM: OFF"},
+    TabPC = {ESP = "COMPUTADORAS", ENG = "COMPUTERS"},
+    TabHacker = {ESP = "HACKERS", ENG = "HACKERS"},
+    BuyPCOn = {ESP = "AUTO BUY PCs: ENCENDIDO", ENG = "AUTO BUY PCs: ON"},
+    BuyPCOff = {ESP = "AUTO BUY PCs: APAGADO", ENG = "AUTO BUY PCs: OFF"},
+    BuyHackerOn = {ESP = "AUTO BUY HACKERS: ENCENDIDO", ENG = "AUTO BUY HACKERS: ON"},
+    BuyHackerOff = {ESP = "AUTO BUY HACKERS: APAGADO", ENG = "AUTO BUY HACKERS: OFF"},
+    SelectAll = {ESP = "[ TODOS ]", ENG = "[ ALL ]"},
+    SelectNone = {ESP = "[ NINGUNO ]", ENG = "[ NONE ]"},
+    StorePrefix = {ESP = "Tienda: ", ENG = "Store: "},
+    MoneyPrefix = {ESP = "Tu Dinero: ", ENG = "Your Cash: "},
+    StatusReady = {ESP = "Listo.", ENG = "Ready."},
+    Loading = {ESP = "Cargando...", ENG = "Loading..."},
+    Yes = {ESP = "SI", ENG = "YES"},
+    No = {ESP = "NO", ENG = "NO"},
+    NotifTitle = {ESP = "Compra Exitosa", ENG = "Purchase Success"},
+    NotifBody = {ESP = "Se compró: ", ENG = "Bought: "},
+    BuyingStatus = {ESP = "Comprando: ", ENG = "Buying: "},
+    LackFunds = {ESP = "Faltan fondos: ", ENG = "No funds: "},
+    Opening = {ESP = "Abriendo Tienda...", ENG = "Opening Store..."}
+}
+
+local ComputerList = {
+    "Junk Computer", "Basement Rig", "Starter Rig", "Gamer Rig", 
+    "Firewall Rig", "Multitask Rig", "Cyber Rig", "Control Rig", "Quantum Rig"
+}
+
+local HackerList = {
+    "Noob Hacker", "Nerd Hacker", "Experienced Hacker", "Street Hacker",
+    "1x1x1x1", "DJ Hacker", "Bobby Robot", "Cyborg Hacker", "Void Hacker"
+}
+
+for _, v in pairs(ComputerList) do Config.SelectedPCs[v] = false end
+for _, v in pairs(HackerList) do Config.SelectedHackers[v] = false end
+
+LocalPlayer.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+end)
+
+local function Notify(title, text)
+    StarterGui:SetCore("SendNotification", {
+        Title = title;
+        Text = text;
+        Duration = 5;
+    })
+end
+
+local function SaveConfig()
+    local DataToSave = {
+        AutoCollect = Config.AutoCollect,
+        AutoBuyPCs = Config.AutoBuyPCs,
+        AutoBuyHackers = Config.AutoBuyHackers,
+        SelectedPCs = Config.SelectedPCs,
+        SelectedHackers = Config.SelectedHackers,
+        Language = Config.Language
+    }
+    pcall(function() writefile(SaveFileName, HttpService:JSONEncode(DataToSave)) end)
+end
+
+local function LoadConfig()
+    if isfile and isfile(SaveFileName) then
+        pcall(function()
+            local decoded = HttpService:JSONDecode(readfile(SaveFileName))
+            if decoded.AutoCollect ~= nil then Config.AutoCollect = decoded.AutoCollect end
+            if decoded.AutoBuyPCs ~= nil then Config.AutoBuyPCs = decoded.AutoBuyPCs end
+            if decoded.AutoBuyHackers ~= nil then Config.AutoBuyHackers = decoded.AutoBuyHackers end
+            if decoded.Language ~= nil then Config.Language = decoded.Language end
+            if decoded.SelectedPCs then for k,v in pairs(decoded.SelectedPCs) do Config.SelectedPCs[k] = v end end
+            if decoded.SelectedHackers then for k,v in pairs(decoded.SelectedHackers) do Config.SelectedHackers[k] = v end end
+        end)
+    end
+end
+LoadConfig()
+
+local function ParseMoney(str)
+    if type(str) ~= "string" then return 0 end
+    local clean = string.gsub(str, "[^%d%.]", "")
+    local num = tonumber(clean) or 0
+    local lower = string.lower(str)
+    if string.find(lower, "k") then num = num * 1000 end
+    if string.find(lower, "m") then num = num * 1000000 end
+    if string.find(lower, "b") then num = num * 1000000000 end
+    return num
+end
+
+local function IsOutOfStock(text)
+    if type(text) ~= "string" then return true end
+    local s = string.lower(text)
+    if string.find(s, "sold") or string.find(s, "out") then return true end
+    local numberString = string.match(text, "%d+")
+    if numberString then
+        local num = tonumber(numberString)
+        if num == 0 then return true end
+    end
+    return false
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+local MainFrame = Instance.new("Frame")
+local UICorner = Instance.new("UICorner")
+local Title = Instance.new("TextLabel")
+local CloseButton = Instance.new("TextButton")
+local LangButton = Instance.new("TextButton")
+local MinimizeButton = Instance.new("TextButton")
+local ToggleCollectBtn = Instance.new("TextButton")
+local UICorner_Col = Instance.new("UICorner")
+local TabContainer = Instance.new("Frame")
+local TabPC_Btn = Instance.new("TextButton")
+local TabHacker_Btn = Instance.new("TextButton")
+
+local PagePCs = Instance.new("Frame")
+local ToggleBuyPCsMaster = Instance.new("TextButton")
+local PCListScroll = Instance.new("ScrollingFrame")
+local UIListPC = Instance.new("UIListLayout")
+
+local PageHackers = Instance.new("Frame")
+local ToggleBuyHackersMaster = Instance.new("TextButton") 
+local HackerListScroll = Instance.new("ScrollingFrame")
+local UIListHacker = Instance.new("UIListLayout")
+
+local BtnSelectAllPC = Instance.new("TextButton")
+local BtnSelectNonePC = Instance.new("TextButton")
+local BtnSelectAllHacker = Instance.new("TextButton")
+local BtnSelectNoneHacker = Instance.new("TextButton")
+
+local RestockInfo = Instance.new("TextLabel")
+local MoneyInfo = Instance.new("TextLabel")
+local StatusLabel = Instance.new("TextLabel")
+local Watermark = Instance.new("TextLabel") -- TU MARCA DE AGUA
+local OpenButton = Instance.new("ImageButton")
+local UICorner_Open = Instance.new("UICorner")
+
+ScreenGui.Name = "TycoonManagerV23"
+if game:GetService("CoreGui"):FindFirstChild("TycoonManagerV23") then
+    game:GetService("CoreGui").TycoonManagerV23:Destroy()
+end
+
+if pcall(function() return game:GetService("CoreGui") end) then
+    ScreenGui.Parent = game:GetService("CoreGui")
+else
+    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+end
+
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+MainFrame.Position = UDim2.new(0.5, -150, 0.5, -235)
+MainFrame.Size = UDim2.new(0, 300, 0, 490)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+UICorner.CornerRadius = UDim.new(0, 10)
+UICorner.Parent = MainFrame
+
+Title.Parent = MainFrame
+Title.BackgroundTransparency = 1
+Title.Position = UDim2.new(0, 15, 0, 10)
+Title.Size = UDim2.new(0, 150, 0, 30)
+Title.Font = Enum.Font.GothamBold
+Title.Text = LangData.Title[Config.Language]
+Title.TextColor3 = Color3.fromRGB(0, 255, 255)
+Title.TextSize = 18
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+CloseButton.Parent = MainFrame
+CloseButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.BackgroundTransparency = 1
+CloseButton.Position = UDim2.new(1, -35, 0, 5)
+CloseButton.Size = UDim2.new(0, 30, 0, 30)
+CloseButton.Font = Enum.Font.GothamBlack
+CloseButton.Text = "X"
+CloseButton.TextColor3 = Color3.fromRGB(200, 50, 50)
+CloseButton.TextSize = 18
+
+MinimizeButton.Parent = MainFrame
+MinimizeButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+MinimizeButton.BackgroundTransparency = 1
+MinimizeButton.Position = UDim2.new(1, -65, 0, 5)
+MinimizeButton.Size = UDim2.new(0, 30, 0, 30)
+MinimizeButton.Font = Enum.Font.GothamBlack
+MinimizeButton.Text = "-"
+MinimizeButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+MinimizeButton.TextSize = 22
+
+LangButton.Parent = MainFrame
+LangButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+LangButton.BackgroundTransparency = 1
+LangButton.Position = UDim2.new(1, -100, 0, 5)
+LangButton.Size = UDim2.new(0, 35, 0, 30)
+LangButton.Font = Enum.Font.GothamBold
+LangButton.Text = Config.Language == "ESP" and "ENG" or "ESP"
+LangButton.TextColor3 = Color3.fromRGB(0, 255, 100)
+LangButton.TextSize = 14
+
+ToggleCollectBtn.Parent = MainFrame
+ToggleCollectBtn.Position = UDim2.new(0.05, 0, 0.10, 0)
+ToggleCollectBtn.Size = UDim2.new(0.9, 0, 0, 35)
+ToggleCollectBtn.Font = Enum.Font.GothamBold
+ToggleCollectBtn.TextSize = 14
+UICorner_Col.CornerRadius = UDim.new(0, 6)
+UICorner_Col.Parent = ToggleCollectBtn
+
+if Config.AutoCollect then
+    ToggleCollectBtn.BackgroundColor3 = Color3.fromRGB(30, 50, 30)
+    ToggleCollectBtn.Text = LangData.AutoFarmOn[Config.Language]
+    ToggleCollectBtn.TextColor3 = Color3.fromRGB(80, 255, 100)
+else
+    ToggleCollectBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    ToggleCollectBtn.Text = LangData.AutoFarmOff[Config.Language]
+    ToggleCollectBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+end
+
+TabContainer.Parent = MainFrame
+TabContainer.BackgroundTransparency = 1
+TabContainer.Position = UDim2.new(0.05, 0, 0.20, 0)
+TabContainer.Size = UDim2.new(0.9, 0, 0, 30)
+
+TabPC_Btn.Parent = TabContainer
+TabPC_Btn.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+TabPC_Btn.Size = UDim2.new(0.48, 0, 1, 0)
+TabPC_Btn.Font = Enum.Font.GothamBold
+TabPC_Btn.Text = LangData.TabPC[Config.Language]
+TabPC_Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+TabPC_Btn.TextSize = 12
+local cr1 = Instance.new("UICorner"); cr1.Parent = TabPC_Btn; cr1.CornerRadius = UDim.new(0,6)
+
+TabHacker_Btn.Parent = TabContainer
+TabHacker_Btn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+TabHacker_Btn.Position = UDim2.new(0.52, 0, 0, 0)
+TabHacker_Btn.Size = UDim2.new(0.48, 0, 1, 0)
+TabHacker_Btn.Font = Enum.Font.GothamBold
+TabHacker_Btn.Text = LangData.TabHacker[Config.Language]
+TabHacker_Btn.TextColor3 = Color3.fromRGB(150, 150, 150)
+TabHacker_Btn.TextSize = 12
+local cr2 = Instance.new("UICorner"); cr2.Parent = TabHacker_Btn; cr2.CornerRadius = UDim.new(0,6)
+
+PagePCs.Parent = MainFrame
+PagePCs.BackgroundTransparency = 1
+PagePCs.Position = UDim2.new(0, 0, 0.28, 0)
+PagePCs.Size = UDim2.new(1, 0, 0.52, 0)
+PagePCs.Visible = true
+
+ToggleBuyPCsMaster.Parent = PagePCs
+ToggleBuyPCsMaster.Position = UDim2.new(0.05, 0, 0, 0)
+ToggleBuyPCsMaster.Size = UDim2.new(0.9, 0, 0, 30)
+ToggleBuyPCsMaster.Font = Enum.Font.GothamBold
+ToggleBuyPCsMaster.TextSize = 12
+local cpc = Instance.new("UICorner"); cpc.Parent = ToggleBuyPCsMaster; cpc.CornerRadius = UDim.new(0,6)
+
+if Config.AutoBuyPCs then
+    ToggleBuyPCsMaster.BackgroundColor3 = Color3.fromRGB(30, 50, 30)
+    ToggleBuyPCsMaster.Text = LangData.BuyPCOn[Config.Language]
+    ToggleBuyPCsMaster.TextColor3 = Color3.fromRGB(80, 255, 100)
+else
+    ToggleBuyPCsMaster.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    ToggleBuyPCsMaster.Text = LangData.BuyPCOff[Config.Language]
+    ToggleBuyPCsMaster.TextColor3 = Color3.fromRGB(255, 80, 80)
+end
+
+BtnSelectAllPC.Parent = PagePCs
+BtnSelectAllPC.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+BtnSelectAllPC.Position = UDim2.new(0.05, 0, 0.13, 0)
+BtnSelectAllPC.Size = UDim2.new(0.44, 0, 0, 20)
+BtnSelectAllPC.Font = Enum.Font.Gotham
+BtnSelectAllPC.Text = LangData.SelectAll[Config.Language]
+BtnSelectAllPC.TextColor3 = Color3.fromRGB(100, 255, 100)
+BtnSelectAllPC.TextSize = 10
+local csa1 = Instance.new("UICorner"); csa1.Parent = BtnSelectAllPC; csa1.CornerRadius = UDim.new(0,4)
+
+BtnSelectNonePC.Parent = PagePCs
+BtnSelectNonePC.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+BtnSelectNonePC.Position = UDim2.new(0.51, 0, 0.13, 0)
+BtnSelectNonePC.Size = UDim2.new(0.44, 0, 0, 20)
+BtnSelectNonePC.Font = Enum.Font.Gotham
+BtnSelectNonePC.Text = LangData.SelectNone[Config.Language]
+BtnSelectNonePC.TextColor3 = Color3.fromRGB(255, 100, 100)
+BtnSelectNonePC.TextSize = 10
+local csn1 = Instance.new("UICorner"); csn1.Parent = BtnSelectNonePC; csn1.CornerRadius = UDim.new(0,4)
+
+PCListScroll.Parent = PagePCs
+PCListScroll.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+PCListScroll.BorderSizePixel = 0
+PCListScroll.Position = UDim2.new(0.05, 0, 0.22, 0) 
+PCListScroll.Size = UDim2.new(0.9, 0, 0.78, 0)
+PCListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+PCListScroll.ScrollBarThickness = 4
+UIListPC.Parent = PCListScroll
+UIListPC.SortOrder = Enum.SortOrder.LayoutOrder
+UIListPC.Padding = UDim.new(0, 5)
+
+PageHackers.Parent = MainFrame
+PageHackers.BackgroundTransparency = 1
+PageHackers.Position = UDim2.new(0, 0, 0.28, 0)
+PageHackers.Size = UDim2.new(1, 0, 0.52, 0)
+PageHackers.Visible = false
+
+ToggleBuyHackersMaster.Parent = PageHackers
+ToggleBuyHackersMaster.Position = UDim2.new(0.05, 0, 0, 0)
+ToggleBuyHackersMaster.Size = UDim2.new(0.9, 0, 0, 30)
+ToggleBuyHackersMaster.Font = Enum.Font.GothamBold
+ToggleBuyHackersMaster.TextSize = 12
+local chc = Instance.new("UICorner"); chc.Parent = ToggleBuyHackersMaster; chc.CornerRadius = UDim.new(0,6)
+
+if Config.AutoBuyHackers then
+    ToggleBuyHackersMaster.BackgroundColor3 = Color3.fromRGB(30, 50, 30)
+    ToggleBuyHackersMaster.Text = LangData.BuyHackerOn[Config.Language]
+    ToggleBuyHackersMaster.TextColor3 = Color3.fromRGB(80, 255, 100)
+else
+    ToggleBuyHackersMaster.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    ToggleBuyHackersMaster.Text = LangData.BuyHackerOff[Config.Language]
+    ToggleBuyHackersMaster.TextColor3 = Color3.fromRGB(255, 80, 80)
+end
+
+BtnSelectAllHacker.Parent = PageHackers
+BtnSelectAllHacker.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+BtnSelectAllHacker.Position = UDim2.new(0.05, 0, 0.13, 0)
+BtnSelectAllHacker.Size = UDim2.new(0.44, 0, 0, 20)
+BtnSelectAllHacker.Font = Enum.Font.Gotham
+BtnSelectAllHacker.Text = LangData.SelectAll[Config.Language]
+BtnSelectAllHacker.TextColor3 = Color3.fromRGB(100, 255, 100)
+BtnSelectAllHacker.TextSize = 10
+local csa2 = Instance.new("UICorner"); csa2.Parent = BtnSelectAllHacker; csa2.CornerRadius = UDim.new(0,4)
+
+BtnSelectNoneHacker.Parent = PageHackers
+BtnSelectNoneHacker.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+BtnSelectNoneHacker.Position = UDim2.new(0.51, 0, 0.13, 0)
+BtnSelectNoneHacker.Size = UDim2.new(0.44, 0, 0, 20)
+BtnSelectNoneHacker.Font = Enum.Font.Gotham
+BtnSelectNoneHacker.Text = LangData.SelectNone[Config.Language]
+BtnSelectNoneHacker.TextColor3 = Color3.fromRGB(255, 100, 100)
+BtnSelectNoneHacker.TextSize = 10
+local csn2 = Instance.new("UICorner"); csn2.Parent = BtnSelectNoneHacker; csn2.CornerRadius = UDim.new(0,4)
+
+HackerListScroll.Parent = PageHackers
+HackerListScroll.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+HackerListScroll.BorderSizePixel = 0
+HackerListScroll.Position = UDim2.new(0.05, 0, 0.22, 0)
+HackerListScroll.Size = UDim2.new(0.9, 0, 0.78, 0)
+HackerListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+HackerListScroll.ScrollBarThickness = 4
+UIListHacker.Parent = HackerListScroll
+UIListHacker.SortOrder = Enum.SortOrder.LayoutOrder
+UIListHacker.Padding = UDim.new(0, 5)
+
+local function UpdateUI_Language()
+    local lang = Config.Language
+    
+    Title.Text = LangData.Title[lang]
+    
+    if Config.AutoCollect then
+        ToggleCollectBtn.Text = LangData.AutoFarmOn[lang]
+    else
+        ToggleCollectBtn.Text = LangData.AutoFarmOff[lang]
+    end
+    
+    TabPC_Btn.Text = LangData.TabPC[lang]
+    TabHacker_Btn.Text = LangData.TabHacker[lang]
+    
+    if Config.AutoBuyPCs then
+        ToggleBuyPCsMaster.Text = LangData.BuyPCOn[lang]
+    else
+        ToggleBuyPCsMaster.Text = LangData.BuyPCOff[lang]
+    end
+    
+    if Config.AutoBuyHackers then
+        ToggleBuyHackersMaster.Text = LangData.BuyHackerOn[lang]
+    else
+        ToggleBuyHackersMaster.Text = LangData.BuyHackerOff[lang]
+    end
+    
+    BtnSelectAllPC.Text = LangData.SelectAll[lang]
+    BtnSelectNonePC.Text = LangData.SelectNone[lang]
+    BtnSelectAllHacker.Text = LangData.SelectAll[lang]
+    BtnSelectNoneHacker.Text = LangData.SelectNone[lang]
+    
+    StatusLabel.Text = LangData.StatusReady[lang]
+    
+    local function UpdateListButtons(list, configTable, refTable)
+        for _, name in ipairs(list) do
+            if refTable[name] and refTable[name].Button then
+                local btn = refTable[name].Button
+                if configTable[name] then
+                    btn.Text = LangData.Yes[lang]
+                else
+                    btn.Text = LangData.No[lang]
+                end
+            end
+        end
+    end
+    
+    UpdateListButtons(ComputerList, Config.SelectedPCs, Config.UIReferencesPCs)
+    UpdateListButtons(HackerList, Config.SelectedHackers, Config.UIReferencesHackers)
+end
+
+LangButton.MouseButton1Click:Connect(function()
+    if Config.Language == "ESP" then
+        Config.Language = "ENG"
+        LangButton.Text = "ESP"
+    else
+        Config.Language = "ESP"
+        LangButton.Text = "ENG"
+    end
+    UpdateUI_Language()
+    SaveConfig()
+end)
+
+local function SetAllSelection(list, state, configTable, refTable)
+    for _, name in ipairs(list) do
+        configTable[name] = state
+        if refTable[name] and refTable[name].Button then
+            local btn = refTable[name].Button
+            if state then
+                btn.Text = LangData.Yes[Config.Language]
+                btn.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+                btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            else
+                btn.Text = LangData.No[Config.Language]
+                btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+                btn.TextColor3 = Color3.fromRGB(255, 100, 100)
+            end
+        end
+    end
+    SaveConfig()
+end
+
+BtnSelectAllPC.MouseButton1Click:Connect(function() SetAllSelection(ComputerList, true, Config.SelectedPCs, Config.UIReferencesPCs) end)
+BtnSelectNonePC.MouseButton1Click:Connect(function() SetAllSelection(ComputerList, false, Config.SelectedPCs, Config.UIReferencesPCs) end)
+BtnSelectAllHacker.MouseButton1Click:Connect(function() SetAllSelection(HackerList, true, Config.SelectedHackers, Config.UIReferencesHackers) end)
+BtnSelectNoneHacker.MouseButton1Click:Connect(function() SetAllSelection(HackerList, false, Config.SelectedHackers, Config.UIReferencesHackers) end)
+
+local function CreateItemToggle(itemName, parentScroll, configTable, uiRefTable)
+    local Frame = Instance.new("Frame")
+    local NameLabel = Instance.new("TextLabel")
+    local InfoLabel = Instance.new("TextLabel")
+    local Button = Instance.new("TextButton")
+    local Corner = Instance.new("UICorner")
+    
+    Frame.Parent = parentScroll
+    Frame.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+    Frame.Size = UDim2.new(0.96, 0, 0, 50)
+    local fc = Instance.new("UICorner"); fc.Parent = Frame; fc.CornerRadius = UDim.new(0,4)
+    
+    NameLabel.Parent = Frame
+    NameLabel.BackgroundTransparency = 1
+    NameLabel.Position = UDim2.new(0, 8, 0, 4)
+    NameLabel.Size = UDim2.new(0.6, 0, 0, 20)
+    NameLabel.Font = Enum.Font.GothamBold
+    NameLabel.Text = itemName
+    NameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    NameLabel.TextSize = 13
+    NameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    InfoLabel.Parent = Frame
+    InfoLabel.BackgroundTransparency = 1
+    InfoLabel.Position = UDim2.new(0, 8, 0, 24)
+    InfoLabel.Size = UDim2.new(0.65, 0, 0, 20)
+    InfoLabel.Font = Enum.Font.Gotham
+    InfoLabel.Text = LangData.Loading[Config.Language]
+    InfoLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    InfoLabel.TextSize = 10
+    InfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    uiRefTable[itemName] = {
+        Name = NameLabel,
+        Info = InfoLabel,
+        Button = Button
+    }
+    
+    Button.Parent = Frame
+    Button.Position = UDim2.new(0.78, 0, 0.2, 0)
+    Button.Size = UDim2.new(0.2, 0, 0.6, 0)
+    Button.Font = Enum.Font.GothamBold
+    Button.TextSize = 11
+    Corner.Parent = Button; Corner.CornerRadius = UDim.new(0,4)
+    
+    if configTable[itemName] then
+        Button.Text = LangData.Yes[Config.Language]
+        Button.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+        Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    else
+        Button.Text = LangData.No[Config.Language]
+        Button.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        Button.TextColor3 = Color3.fromRGB(255, 100, 100)
+    end
+    
+    Button.MouseButton1Click:Connect(function()
+        configTable[itemName] = not configTable[itemName]
+        if configTable[itemName] then
+            Button.Text = LangData.Yes[Config.Language]
+            Button.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+            Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+        else
+            Button.Text = LangData.No[Config.Language]
+            Button.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            Button.TextColor3 = Color3.fromRGB(255, 100, 100)
+        end
+        SaveConfig()
+    end)
+end
+
+for _, pc in ipairs(ComputerList) do CreateItemToggle(pc, PCListScroll, Config.SelectedPCs, Config.UIReferencesPCs) end
+PCListScroll.CanvasSize = UDim2.new(0, 0, 0, #ComputerList * 55)
+
+for _, hacker in ipairs(HackerList) do CreateItemToggle(hacker, HackerListScroll, Config.SelectedHackers, Config.UIReferencesHackers) end
+HackerListScroll.CanvasSize = UDim2.new(0, 0, 0, #HackerList * 55)
+
+RestockInfo.Parent = MainFrame
+RestockInfo.BackgroundTransparency = 1
+RestockInfo.Position = UDim2.new(0, 0, 0.84, 0)
+RestockInfo.Size = UDim2.new(1, 0, 0, 20)
+RestockInfo.Font = Enum.Font.GothamBold
+RestockInfo.Text = LangData.StorePrefix[Config.Language]
+RestockInfo.TextColor3 = Color3.fromRGB(0, 255, 255)
+RestockInfo.TextSize = 12
+
+MoneyInfo.Parent = MainFrame
+MoneyInfo.BackgroundTransparency = 1
+MoneyInfo.Position = UDim2.new(0, 0, 0.88, 0)
+MoneyInfo.Size = UDim2.new(1, 0, 0, 20)
+MoneyInfo.Font = Enum.Font.GothamBold
+MoneyInfo.Text = LangData.MoneyPrefix[Config.Language]
+MoneyInfo.TextColor3 = Color3.fromRGB(100, 255, 100)
+MoneyInfo.TextSize = 12
+
+StatusLabel.Parent = MainFrame
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Position = UDim2.new(0, 0, 0.94, 0)
+StatusLabel.Size = UDim2.new(1, 0, 0, 20)
+StatusLabel.Font = Enum.Font.Gotham
+StatusLabel.Text = LangData.StatusReady[Config.Language]
+StatusLabel.TextColor3 = Color3.fromRGB(100, 100, 100)
+StatusLabel.TextSize = 11
+
+-- MARCA DE AGUA (Watermark)
+Watermark.Name = "Watermark"
+Watermark.Parent = MainFrame
+Watermark.BackgroundTransparency = 1
+Watermark.Position = UDim2.new(1, -5, 1, -5) -- Esquina inferior derecha
+Watermark.Size = UDim2.new(0, 150, 0, 15)
+Watermark.AnchorPoint = Vector2.new(1, 1)
+Watermark.Font = Enum.Font.GothamBold
+Watermark.Text = "Dev: zbrau__omg"
+Watermark.TextColor3 = Color3.fromRGB(170, 85, 255) -- Color Violeta Neón
+Watermark.TextSize = 10
+Watermark.TextXAlignment = Enum.TextXAlignment.Right
+
+OpenButton.Parent = ScreenGui
+OpenButton.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
+OpenButton.Position = UDim2.new(0.1, 0, 0.2, 0)
+OpenButton.Size = UDim2.new(0, 45, 0, 45)
+OpenButton.Visible = false
+UICorner_Open.Parent = OpenButton; UICorner_Open.CornerRadius = UDim.new(1,0)
+
+local function MakeDraggable(frame)
+    local dragging, dragInput, dragStart, startPos
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true; dragStart = input.Position; startPos = frame.Position
+            input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+        end
+    end)
+    frame.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end end)
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+MakeDraggable(MainFrame); MakeDraggable(OpenButton)
+
+TabPC_Btn.MouseButton1Click:Connect(function()
+    PagePCs.Visible = true; PageHackers.Visible = false
+    TabPC_Btn.BackgroundColor3 = Color3.fromRGB(0, 150, 255); TabPC_Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TabHacker_Btn.BackgroundColor3 = Color3.fromRGB(40, 40, 50); TabHacker_Btn.TextColor3 = Color3.fromRGB(150, 150, 150)
+end)
+TabHacker_Btn.MouseButton1Click:Connect(function()
+    PagePCs.Visible = false; PageHackers.Visible = true
+    TabHacker_Btn.BackgroundColor3 = Color3.fromRGB(0, 150, 255); TabHacker_Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TabPC_Btn.BackgroundColor3 = Color3.fromRGB(40, 40, 50); TabPC_Btn.TextColor3 = Color3.fromRGB(150, 150, 150)
+end)
+CloseButton.MouseButton1Click:Connect(function() Config.AutoCollect = false; Config.AutoBuyPCs = false; Config.AutoBuyHackers = false; ScreenGui:Destroy() end)
+MinimizeButton.MouseButton1Click:Connect(function() MainFrame.Visible = false; OpenButton.Visible = true end)
+OpenButton.MouseButton1Click:Connect(function() OpenButton.Visible = false; MainFrame.Visible = true end)
+
+ToggleCollectBtn.MouseButton1Click:Connect(function()
+    Config.AutoCollect = not Config.AutoCollect
+    if Config.AutoCollect then ToggleCollectBtn.BackgroundColor3 = Color3.fromRGB(30, 50, 30); ToggleCollectBtn.Text = LangData.AutoFarmOn[Config.Language]; ToggleCollectBtn.TextColor3 = Color3.fromRGB(80, 255, 100)
+    else ToggleCollectBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50); ToggleCollectBtn.Text = LangData.AutoFarmOff[Config.Language]; ToggleCollectBtn.TextColor3 = Color3.fromRGB(255, 80, 80) end
+    SaveConfig()
+end)
+ToggleBuyPCsMaster.MouseButton1Click:Connect(function()
+    Config.AutoBuyPCs = not Config.AutoBuyPCs
+    if Config.AutoBuyPCs then ToggleBuyPCsMaster.BackgroundColor3 = Color3.fromRGB(30, 50, 30); ToggleBuyPCsMaster.Text = LangData.BuyPCOn[Config.Language]; ToggleBuyPCsMaster.TextColor3 = Color3.fromRGB(80, 255, 100)
+    else ToggleBuyPCsMaster.BackgroundColor3 = Color3.fromRGB(40, 40, 50); ToggleBuyPCsMaster.Text = LangData.BuyPCOff[Config.Language]; ToggleBuyPCsMaster.TextColor3 = Color3.fromRGB(255, 80, 80) end
+    SaveConfig()
+end)
+ToggleBuyHackersMaster.MouseButton1Click:Connect(function()
+    Config.AutoBuyHackers = not Config.AutoBuyHackers
+    if Config.AutoBuyHackers then ToggleBuyHackersMaster.BackgroundColor3 = Color3.fromRGB(30, 50, 30); ToggleBuyHackersMaster.Text = LangData.BuyHackerOn[Config.Language]; ToggleBuyHackersMaster.TextColor3 = Color3.fromRGB(80, 255, 100)
+    else ToggleBuyHackersMaster.BackgroundColor3 = Color3.fromRGB(40, 40, 50); ToggleBuyHackersMaster.Text = LangData.BuyHackerOff[Config.Language]; ToggleBuyHackersMaster.TextColor3 = Color3.fromRGB(255, 80, 80) end
+    SaveConfig()
+end)
+
+local function ConnectEvents()
+    pcall(function()
+        local Currency = LocalPlayer.PlayerGui.Interface.Currency.Amount
+        MoneyInfo.Text = LangData.MoneyPrefix[Config.Language] .. Currency.Text
+        Currency:GetPropertyChangedSignal("Text"):Connect(function()
+            MoneyInfo.Text = LangData.MoneyPrefix[Config.Language] .. Currency.Text
+        end)
+    end)
+    
+    pcall(function()
+        local Restock = LocalPlayer.PlayerGui.Interface.Frames.Computers.Top.RestockLabel
+        RestockInfo.Text = LangData.StorePrefix[Config.Language] .. Restock.Text
+        Restock:GetPropertyChangedSignal("Text"):Connect(function()
+            RestockInfo.Text = LangData.StorePrefix[Config.Language] .. Restock.Text
+        end)
+    end)
+end
+ConnectEvents()
+
+local function UpdateListVisuals()
+    pcall(function()
+        local pcFrame = LocalPlayer.PlayerGui.Interface.Frames.Computers.List.ScrollingFrame
+        for name, labels in pairs(Config.UIReferencesPCs) do
+            local item = pcFrame:FindFirstChild(name)
+            if item then
+                local price = item:FindFirstChild("Price") and item.Price.Text or "?"
+                local rate = item:FindFirstChild("CashPerRate") and item.CashPerRate.Text or "?"
+                local stock = item:FindFirstChild("Stock") and item.Stock.Text or "?"
+                
+                labels.Info.Text = "💰"..price.." | 📈"..rate.." | 📦"..stock
+                
+                local isSold = IsOutOfStock(stock)
+                local finalColor = Color3.fromRGB(0, 255, 127)
+                if stock == "?" then finalColor = Color3.fromRGB(255, 255, 255)
+                elseif isSold then finalColor = Color3.fromRGB(255, 60, 60) end
+                
+                labels.Info.TextColor3 = finalColor
+                labels.Name.TextColor3 = finalColor
+            else
+                labels.Info.Text = LangData.Opening[Config.Language]
+                labels.Info.TextColor3 = Color3.fromRGB(255, 255, 255)
+            end
+        end
+    end)
+    
+    pcall(function()
+        local hackerFrame = LocalPlayer.PlayerGui.Interface.Frames.Hackers.List.ScrollingFrame
+        for name, labels in pairs(Config.UIReferencesHackers) do
+            local item = hackerFrame:FindFirstChild(name)
+            if item then
+                local price = item:FindFirstChild("Price") and item.Price.Text or "?"
+                local multi = item:FindFirstChild("Multiplier") and item.Multiplier.Text or "?" 
+                local stock = item:FindFirstChild("Stock") and item.Stock.Text or "?"
+                
+                labels.Info.Text = "💰"..price.." | ⚡"..multi.." | 📦"..stock
+                
+                local isSold = IsOutOfStock(stock)
+                local finalColor = Color3.fromRGB(0, 255, 127)
+                if stock == "?" then finalColor = Color3.fromRGB(255, 255, 255)
+                elseif isSold then finalColor = Color3.fromRGB(255, 60, 60) end
+                
+                labels.Info.TextColor3 = finalColor
+                labels.Name.TextColor3 = finalColor
+            else
+                labels.Info.Text = LangData.Opening[Config.Language]
+                labels.Info.TextColor3 = Color3.fromRGB(255, 255, 255)
+            end
+        end
+    end)
+end
+task.spawn(function() while ScreenGui.Parent do UpdateListVisuals(); task.wait(1) end end)
+
+local function CheckAndBuy()
+    local moneyPool = 0
+    local successMoney, errMoney = pcall(function()
+        moneyPool = ParseMoney(LocalPlayer.PlayerGui.Interface.Currency.Amount.Text)
+    end)
+    if not successMoney then return end
+
+    if Config.AutoBuyPCs then
+        pcall(function()
+            local scroll = LocalPlayer.PlayerGui.Interface.Frames.Computers.List.ScrollingFrame
+            for _, name in ipairs(ComputerList) do
+                if Config.SelectedPCs[name] then
+                    local item = scroll:FindFirstChild(name)
+                    if item then
+                        local stockText = item:FindFirstChild("Stock") and item.Stock.Text or ""
+                        if not IsOutOfStock(stockText) and stockText ~= "?" then
+                            local priceStr = item:FindFirstChild("Price") and item.Price.Text or "9999999999999"
+                            local priceNum = ParseMoney(priceStr)
+                            if moneyPool >= priceNum then
+                                StatusLabel.Text = LangData.BuyingStatus[Config.Language] .. name
+                                game:GetService("ReplicatedStorage").Services.ShopService.PurchaseComputer:InvokeServer(name)
+                                Notify(LangData.NotifTitle[Config.Language], LangData.NotifBody[Config.Language] .. name)
+                                moneyPool = moneyPool - priceNum
+                                task.wait(Config.BuyDelay) 
+                            else
+                                StatusLabel.Text = LangData.LackFunds[Config.Language] .. name
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    if Config.AutoBuyHackers then
+        pcall(function()
+            local scroll = LocalPlayer.PlayerGui.Interface.Frames.Hackers.List.ScrollingFrame
+            for _, name in ipairs(HackerList) do
+                if Config.SelectedHackers[name] then
+                    local item = scroll:FindFirstChild(name)
+                    if item then
+                        local stockText = item:FindFirstChild("Stock") and item.Stock.Text or ""
+                        if not IsOutOfStock(stockText) and stockText ~= "?" then
+                            local priceStr = item:FindFirstChild("Price") and item.Price.Text or "9999999999999"
+                            local priceNum = ParseMoney(priceStr)
+                            if moneyPool >= priceNum then
+                                StatusLabel.Text = LangData.BuyingStatus[Config.Language] .. name
+                                game:GetService("ReplicatedStorage").Services.ShopService.PurchaseHacker:InvokeServer(name)
+                                Notify(LangData.NotifTitle[Config.Language], LangData.NotifBody[Config.Language] .. name)
+                                moneyPool = moneyPool - priceNum
+                                task.wait(Config.BuyDelay)
+                            else
+                                StatusLabel.Text = LangData.LackFunds[Config.Language] .. name
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end
+
+local function GetExactPlot()
+    local Plots = Workspace:FindFirstChild("Plots")
+    if not Plots then return nil end
+    for _, plot in pairs(Plots:GetChildren()) do
+        local base = plot:FindFirstChild("Base")
+        if base then
+            local sign = base:FindFirstChild("Sign")
+            if sign and sign:FindFirstChild("UI") then
+                local usernameLbl = sign.UI:FindFirstChild("Username")
+                if usernameLbl and string.find(usernameLbl.Text, LocalPlayer.Name) then return plot end
+            end
+        end
+    end
+    return nil
+end
+local function TeleportAndCollect()
+    if not Config.AutoCollect then return end
+    local myPlot = GetExactPlot()
+    if not myPlot then return end
+    local computersFolder = myPlot:FindFirstChild("Computers")
+    if not computersFolder then return end
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local startPos = root.CFrame
+
+    for _, computer in pairs(computersFolder:GetChildren()) do
+        if not Config.AutoCollect then break end
+        local mainPart = computer:FindFirstChild("Main")
+        if mainPart then
+            local prompt = mainPart:FindFirstChild("CollectPrompt")
+            if prompt and prompt:IsA("ProximityPrompt") and prompt.Enabled then
+                root.CFrame = mainPart.CFrame * CFrame.new(0, 3, 0)
+                root.Velocity = Vector3.new(0,0,0); root.AssemblyLinearVelocity = Vector3.new(0,0,0)
+                prompt.MaxActivationDistance = 25; prompt.RequiresLineOfSight = false; prompt.HoldDuration = 0
+                task.wait(0.15) 
+                for i = 1, Config.ClicksPorPC do if prompt.Enabled then fireproximityprompt(prompt) task.wait(0.05) end end
+                task.wait(Config.TeleportDelay)
+            end
+        end
+    end
+    if Config.ReturnToStart and Config.AutoCollect then root.CFrame = startPos end
+end
+
+task.spawn(function() 
+    while true do 
+        if Config.AutoCollect then 
+            local s,e = pcall(TeleportAndCollect) 
+            task.wait(1) 
+        else 
+            task.wait(0.5) 
+        end 
+    end 
+end)
+
+task.spawn(function() 
+    while true do 
+        local s,e = pcall(CheckAndBuy)
+        task.wait(Config.ScanSpeed) 
+    end 
+end)
