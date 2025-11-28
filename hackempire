@@ -15,7 +15,7 @@ local LocalPlayer = Players.LocalPlayer
 -- === CONFIGURACIÓN PARA AUTO EXECUTE ===
 -- Coloca aquí el link RAW de tu script si quieres que el Auto-Execute funcione vía QueueOnTeleport
 -- Si usas la carpeta 'autoexec' de tu ejecutor, puedes dejar esto vacío.
-local ScriptURL = "" 
+local ScriptURL = "https://raw.githubusercontent.com/zbrau/script/main/hackempire" 
 -- =======================================
 
 local SaveFileName = "TycoonManagerConfig_V41.json"
