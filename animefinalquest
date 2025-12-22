@@ -1,0 +1,709 @@
+local UI = loadstring(game:HttpGet("https://xan.bar/init.lua"))()
+
+-- Servicios
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local GuiService = game:GetService("GuiService")
+local Debris = game:GetService("Debris")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local TweenService = game:GetService("TweenService")
+local VirtualUser = game:GetService("VirtualUser")
+local LocalPlayer = Players.LocalPlayer
+
+local IsMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+-- ==========================================================
+-- 1. SAVE SYSTEM
+-- ==========================================================
+
+local ConfigFileName = "AnimeQuest_Config_v44.json"
+
+getgenv().Settings = {
+    AutoFarm = false,
+    FarmMode = "Behind",
+    FarmDistance = 20,
+    FarmSpeed = 300,
+    
+    AutoAttack = false,
+    AttackDelay = 0.1,
+    AttackKey = "T", 
+    
+    PanicMode = false,
+    PanicThreshold = 100,
+    PanicSpeed = 1.0,
+    
+    AutoHealth = false,
+    HealthThreshold = 180,
+    
+    AutoReplay = false,
+    
+    TargetESP = true,
+    AntiAFK = true,
+    
+    SkillDelay = 0.5,
+    Skill1 = false,
+    Skill2 = false,
+    Skill3 = false,
+    SkillF = false,
+    SkillG = false,
+    SkillX = false 
+}
+
+local function SaveConfig()
+    if not isfolder("AnimeQuest_Config") then makefolder("AnimeQuest_Config") end
+    local json = HttpService:JSONEncode(getgenv().Settings)
+    writefile(ConfigFileName, json)
+end
+
+local function LoadConfig()
+    if isfile(ConfigFileName) then
+        local success, result = pcall(function()
+            return HttpService:JSONDecode(readfile(ConfigFileName))
+        end)
+        if success and result then
+            for key, value in pairs(result) do
+                if getgenv().Settings[key] ~= nil then
+                    getgenv().Settings[key] = value
+                end
+            end
+        end
+    end
+end
+LoadConfig()
+
+-- ==========================================================
+-- 2. VARIABLES & HELPERS
+-- ==========================================================
+getgenv().CollectingHealth = false 
+getgenv().InPanic = false 
+getgenv().CurrentTarget = nil 
+getgenv().Wave10Dumped = false 
+
+local PanicCenter = Vector3.new(400, 400, 0)
+
+-- === ESP SYSTEM ===
+local Highlight = Instance.new("Highlight")
+Highlight.Name = "TargetESP"
+Highlight.FillColor = Color3.fromRGB(255, 0, 0)
+Highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+Highlight.FillTransparency = 0.5
+Highlight.OutlineTransparency = 0
+Highlight.Parent = game.CoreGui
+
+RunService.RenderStepped:Connect(function()
+    if getgenv().Settings.TargetESP and getgenv().CurrentTarget and getgenv().CurrentTarget.Parent then
+        if Highlight.Adornee ~= getgenv().CurrentTarget then
+            Highlight.Adornee = getgenv().CurrentTarget
+        end
+    else
+        Highlight.Adornee = nil
+    end
+end)
+
+local function GetCurrentWave()
+    local success, wave = pcall(function()
+        local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+        local wTest = pGui and pGui:FindFirstChild("WaveTest")
+        local wLabel = wTest and wTest:FindFirstChild("Wave")
+        if wLabel and wLabel.Text then
+            local numberStr = string.match(wLabel.Text, "%d+")
+            return tonumber(numberStr)
+        end
+        return 0
+    end)
+    if success and wave then return wave end
+    return 0
+end
+
+local function GetHealthData()
+    local success, current, max = pcall(function()
+        local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+        local sGui = pGui and pGui:FindFirstChild("ScreenGuiIngame")
+        local hBar = sGui and sGui:FindFirstChild("Healtbar") 
+        local label = hBar and hBar:FindFirstChild("HealthBarText")
+        if label then
+            local text = label.Text 
+            local split = string.split(text, "/")
+            return tonumber(split[1]), tonumber(split[2])
+        end
+        return nil, nil
+    end)
+    if success and current then
+        if not max then
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChild("Humanoid")
+            max = hum and hum.MaxHealth or 1000
+        end
+        return current, max
+    end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChild("Humanoid")
+    if hum then return hum.Health, hum.MaxHealth end
+    return 9999, 9999 
+end
+
+local function IsTargetValidAndClose()
+    local target = getgenv().CurrentTarget
+    local player = LocalPlayer.Character
+    if not target or not target.Parent or not player then return false end
+    local targetRoot = target:FindFirstChild("HumanoidRootPart")
+    local playerRoot = player:FindFirstChild("HumanoidRootPart")
+    local targetHumanoid = target:FindFirstChild("Humanoid")
+    if not targetRoot or not playerRoot or not targetHumanoid then return false end
+    if targetHumanoid.Health <= 0 then return false end
+    local magnitude = (playerRoot.Position - targetRoot.Position).Magnitude
+    if magnitude < 60 then return true end
+    return false
+end
+
+local function PressKey(key)
+    VirtualInputManager:SendKeyEvent(true, key, false, game)
+    task.wait(0.05)
+    VirtualInputManager:SendKeyEvent(false, key, false, game)
+end
+
+local function AnyNormalEnemyAlive()
+    local npcFolder = workspace:FindFirstChild("NPCs")
+    if npcFolder then
+        for _, v in pairs(npcFolder:GetChildren()) do
+            if v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function FindAnyMage()
+    local npcFolder = workspace:FindFirstChild("NPCs")
+    if npcFolder then
+        for _, enemy in pairs(npcFolder:GetChildren()) do
+            if enemy:FindFirstChild("Humanoid") and enemy.Humanoid.Health > 0 and enemy:FindFirstChild("HumanoidRootPart") then
+                if string.find(enemy.Name, "Mage") then
+                    return enemy
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function IsBossVulnerable(bossModel)
+    if bossModel then
+        local phase2 = bossModel:GetAttribute("Phase2")
+        return phase2 == true
+    end
+    return false
+end
+
+local function FindBoss()
+    local potentialBosses = {}
+    if workspace:FindFirstChild("Boss") then
+        table.insert(potentialBosses, workspace.Boss:FindFirstChild("Boss"))
+        table.insert(potentialBosses, workspace.Boss)
+    end
+    
+    for _, boss in pairs(potentialBosses) do
+        if boss and boss:IsA("Model") and boss:FindFirstChild("Humanoid") and boss.Humanoid.Health > 0 and boss:FindFirstChild("HumanoidRootPart") then
+            if IsBossVulnerable(boss) then
+                return boss
+            end
+        end
+    end
+    return nil
+end
+
+-- ==========================================================
+-- 3. REPLAY LOGIC
+-- ==========================================================
+
+local function ClickObject(obj)
+    if not obj or not obj.Visible then return end 
+    local pos = obj.AbsolutePosition
+    local size = obj.AbsoluteSize
+    local inset = GuiService:GetGuiInset()
+    local x = pos.X + (size.X / 2)
+    local y = pos.Y + (size.Y / 2) + inset.Y 
+    
+    local marker = Instance.new("ScreenGui")
+    local frame = Instance.new("Frame")
+    marker.Name = "ClickDebug"
+    marker.Parent = game.CoreGui
+    frame.Parent = marker
+    frame.Size = UDim2.new(0, 10, 0, 10)
+    frame.Position = UDim2.new(0, x - 5, 0, y - 5 - inset.Y) 
+    frame.BackgroundColor3 = Color3.new(1, 0, 0)
+    frame.BorderSizePixel = 0
+    frame.ZIndex = 10000
+    Debris:AddItem(marker, 0.5)
+
+    VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+    task.wait(0.05)
+    VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
+end
+
+task.spawn(function()
+    while true do
+        if not getgenv().Settings.AutoReplay then task.wait(1) continue end
+        local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if pGui then
+            local endScreen = pGui:FindFirstChild("EndScreen")
+            local screen = endScreen and endScreen:FindFirstChild("Screen")
+            local frame = screen and screen:FindFirstChild("Frame")
+            local buttonContainer = frame and frame:FindFirstChild("Button")
+            if buttonContainer and buttonContainer.Visible then
+                local realBtn = buttonContainer:FindFirstChild("TextButton")
+                local targetBtn = realBtn or buttonContainer
+                UI.Notify({Title = "REPLAY", Subtitle = "Spamming 10 Clicks!", Duration = 1})
+                for i = 1, 10 do
+                    if targetBtn and targetBtn.Visible then ClickObject(targetBtn) end
+                    task.wait(0.1) 
+                end
+                task.wait(4) 
+            end
+        end
+        task.wait(0.5) 
+    end
+end)
+
+-- ==========================================================
+-- 4. LOGIC LOOPS 
+-- ==========================================================
+
+-- ANTI-AFK
+LocalPlayer.Idled:Connect(function()
+    if getgenv().Settings.AntiAFK then
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end
+end)
+
+-- === [FIXED] DOUBLE GRAVITY LOCK ===
+RunService.Stepped:Connect(function()
+    if not LocalPlayer.Character then return end
+    local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    
+    if getgenv().Settings.AutoFarm or getgenv().InPanic then
+        -- 1. AGGRESSIVE NOCLIP
+        for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                part.CanCollide = false
+            end
+        end
+        
+        -- 2. DOUBLE GRAVITY LOCK (BodyVelocity + AssemblyVelocity)
+        if root and (getgenv().CurrentTarget or getgenv().InPanic or getgenv().CollectingHealth) then
+            -- A: Fuerza Infinita
+            local bv = root:FindFirstChild("FarmVelocity")
+            if not bv then
+                bv = Instance.new("BodyVelocity")
+                bv.Name = "FarmVelocity"
+                bv.Parent = root
+                bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                bv.Velocity = Vector3.new(0, 0, 0)
+            end
+            
+            -- B: Congelamiento Matemático (Elimina micro-caídas por animación)
+            root.AssemblyLinearVelocity = Vector3.new(0,0,0)
+            root.AssemblyAngularVelocity = Vector3.new(0,0,0)
+        end
+    else
+        -- Cleanup
+        if root then
+            local bv = root:FindFirstChild("FarmVelocity")
+            if bv then bv:Destroy() end
+        end
+    end
+end)
+
+-- PANIC SYSTEM
+local panicAngle = 0
+local panicRadius = 160
+
+RunService.Heartbeat:Connect(function(deltaTime)
+    if getgenv().Settings.PanicMode and getgenv().InPanic then
+        local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if root then
+            local speed = getgenv().Settings.PanicSpeed or 1.0
+            panicAngle = panicAngle + (speed * deltaTime)
+            local offsetX = math.cos(panicAngle) * panicRadius
+            local offsetZ = math.sin(panicAngle) * panicRadius
+            local newPos = PanicCenter + Vector3.new(offsetX, 0, offsetZ)
+            root.CFrame = CFrame.new(newPos, PanicCenter)
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if getgenv().Settings.PanicMode then 
+            local hp, maxHp = GetHealthData()
+            if hp < getgenv().Settings.PanicThreshold and not getgenv().InPanic then
+                getgenv().InPanic = true
+                getgenv().CurrentTarget = nil 
+                UI.Notify({Title = "PANIC", Subtitle = "Optimized Spin Active", Duration = 3})
+            end
+            if getgenv().InPanic and hp >= (maxHp - 5) then
+                local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if root then
+                     local bv = root:FindFirstChild("FarmVelocity")
+                     if bv then bv:Destroy() end
+                     
+                     root.CFrame = CFrame.new(0, -500, 0)
+                end
+                getgenv().InPanic = false
+                UI.Notify({Title = "FULL HEALTH", Subtitle = "Void Drop...", Duration = 3})
+                task.wait(2)
+            end
+        else
+            getgenv().InPanic = false 
+        end
+        task.wait(0.1)
+    end
+end)
+
+-- Auto Health
+task.spawn(function()
+    while true do
+        if getgenv().Settings.AutoHealth and not getgenv().InPanic then 
+            local hp, _ = GetHealthData()
+            if hp < getgenv().Settings.HealthThreshold then
+                local visualsFolder = workspace:FindFirstChild("Visuals")
+                local healPart = visualsFolder and visualsFolder:FindFirstChild("Heal")
+                if healPart then
+                    getgenv().CollectingHealth = true 
+                    getgenv().CurrentTarget = nil 
+                    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    if root then
+                        root.CFrame = healPart.CFrame
+                    end
+                    task.wait(0.2)
+                    getgenv().CollectingHealth = false 
+                else 
+                    getgenv().CollectingHealth = false 
+                end
+            else 
+                getgenv().CollectingHealth = false 
+            end
+        else 
+            getgenv().CollectingHealth = false 
+        end
+        task.wait(0.1) 
+    end
+end)
+
+-- AUTO ATTACK
+task.spawn(function()
+    while true do
+        if getgenv().Settings.AutoAttack and not getgenv().InPanic and IsTargetValidAndClose() and not getgenv().CollectingHealth then
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+            task.wait(0.05)
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+            local delay = getgenv().Settings.AttackDelay or 0.1
+            task.wait(delay) 
+        else
+            task.wait(0.2)
+        end
+    end
+end)
+
+-- SKILLS
+task.spawn(function()
+    while true do
+        if not getgenv().InPanic and IsTargetValidAndClose() and not getgenv().CollectingHealth then
+            local delayTime = getgenv().Settings.SkillDelay or 0.5
+            local currentWave = GetCurrentWave()
+            local isSavingRound = (currentWave == 8 or currentWave == 9)
+            
+            if currentWave == 10 and not getgenv().Wave10Dumped then
+                if getgenv().Settings.SkillX then
+                    UI.Notify({Title = "BURST", Subtitle = "Firing X!", Duration = 1})
+                    PressKey(Enum.KeyCode.X); task.wait(0.3)
+                end
+                if getgenv().Settings.SkillG then
+                    UI.Notify({Title = "BURST", Subtitle = "Firing G!", Duration = 1})
+                    PressKey(Enum.KeyCode.G); task.wait(0.3)
+                end
+                getgenv().Wave10Dumped = true 
+            elseif currentWave ~= 10 then
+                getgenv().Wave10Dumped = false
+            end
+            
+            if getgenv().Settings.SkillX and not isSavingRound and IsTargetValidAndClose() then PressKey(Enum.KeyCode.X); task.wait(0.1) end
+            if getgenv().Settings.SkillG and not isSavingRound and IsTargetValidAndClose() then PressKey(Enum.KeyCode.G); task.wait(0.1) end
+            
+            if getgenv().Settings.Skill1 and IsTargetValidAndClose() then PressKey(Enum.KeyCode.One) end
+            if getgenv().Settings.Skill2 and IsTargetValidAndClose() then PressKey(Enum.KeyCode.Two) end
+            if getgenv().Settings.Skill3 and IsTargetValidAndClose() then PressKey(Enum.KeyCode.Three) end
+            if getgenv().Settings.SkillF and IsTargetValidAndClose() then PressKey(Enum.KeyCode.F) end
+            
+            task.wait(delayTime)
+        else
+            task.wait(0.2)
+        end
+    end
+end)
+
+-- FARM MOVEMENT
+task.spawn(function()
+    while true do
+        if not getgenv().Settings.AutoFarm or getgenv().InPanic or getgenv().CollectingHealth then 
+            getgenv().CurrentTarget = nil
+            task.wait(0.5)
+            continue 
+        end
+        
+        local npcFolder = workspace:FindFirstChild("NPCs")
+        local chosenEnemy = nil
+        
+        if npcFolder then
+            local enemies = npcFolder:GetChildren()
+            for _, enemy in pairs(enemies) do
+                if enemy:FindFirstChild("Humanoid") and enemy:FindFirstChild("HumanoidRootPart") and enemy.Humanoid.Health > 0 then
+                    local name = enemy.Name
+                    if string.find(name, "Mage") or string.find(name, "Ranged Orc") then
+                        chosenEnemy = enemy
+                        break 
+                    end
+                    if not chosenEnemy then chosenEnemy = enemy end
+                end
+            end
+        end
+        
+        if not chosenEnemy then
+            local boss = FindBoss()
+            if boss then chosenEnemy = boss end
+        end
+        
+        if chosenEnemy then
+            getgenv().CurrentTarget = chosenEnemy
+            local hum = chosenEnemy:FindFirstChild("Humanoid")
+            local root = chosenEnemy:FindFirstChild("HumanoidRootPart")
+            
+            local isBossTarget = (string.find(chosenEnemy.Name, "Boss") ~= nil)
+            
+            while getgenv().Settings.AutoFarm and hum and hum.Health > 0 and root do
+                if getgenv().CollectingHealth or getgenv().InPanic then getgenv().CurrentTarget = nil break end
+                
+                if not isBossTarget and not string.find(chosenEnemy.Name, "Mage") then
+                    local newMage = FindAnyMage()
+                    if newMage then getgenv().CurrentTarget = nil; break end
+                end
+                
+                if isBossTarget then
+                    if AnyNormalEnemyAlive() then getgenv().CurrentTarget = nil; break end
+                    if not IsBossVulnerable(chosenEnemy) then
+                        getgenv().CurrentTarget = nil
+                        UI.Notify({Title = "BOSS INVULNERABLE", Subtitle = "Waiting for Phase 2...", Duration = 2})
+                        break
+                    end
+                end
+                
+                local pRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if pRoot then
+                    local dist = getgenv().Settings.FarmDistance
+                    local mode = getgenv().Settings.FarmMode
+                    
+                    if chosenEnemy.Name == "Demon King" then mode = "Behind" end
+                    
+                    local offset = CFrame.new(0, dist, 0) 
+                    if mode == "Behind" then offset = CFrame.new(0, 5, dist) 
+                    elseif mode == "Below" then offset = CFrame.new(0, -dist, 0)
+                    else offset = CFrame.new(0, dist, 0) end
+                    
+                    local targetCFrame = root.CFrame * offset
+                    local distance = (targetCFrame.Position - pRoot.Position).Magnitude
+                    local speed = getgenv().Settings.FarmSpeed or 300
+                    
+                    local tweenInfo = TweenInfo.new(distance / speed, Enum.EasingStyle.Linear)
+                    local goalCFrame = CFrame.new(targetCFrame.Position, root.Position)
+                    
+                    local tween = TweenService:Create(pRoot, tweenInfo, {CFrame = goalCFrame})
+                    tween:Play()
+                end
+                RunService.Heartbeat:Wait()
+            end
+            getgenv().CurrentTarget = nil
+        end
+        task.wait()
+    end
+end)
+
+-- ================= UI BUILD =================
+
+UI.Splash({ Title = "Auto Farm", Subtitle = "V44: Stable Flight Fix", Duration = 2 })
+task.wait(1)
+
+local Window = UI.New({
+    Title = "Auto Farm",
+    Subtitle = "Anime Quest",
+    Theme = "Default",
+    Size = IsMobile and UDim2.new(0, 420, 0, 500) or UDim2.new(0, 480, 0, 420),
+    ShowUserInfo = true,
+    ShowLogo = true,
+    Logo = UI.Logos.XanBar
+})
+
+local TabFarm = Window:AddTab("Farm", UI.Icons.Home or nil)
+
+TabFarm:AddSection("Main Controls") 
+
+TabFarm:AddToggle("Enable Auto Farm", { Default = getgenv().Settings.AutoFarm, Flag = "FarmFlag" }, function(Value)
+    getgenv().Settings.AutoFarm = Value
+    if not Value then 
+        getgenv().CurrentTarget = nil 
+        -- Limpiar BV
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local bv = LocalPlayer.Character.HumanoidRootPart:FindFirstChild("FarmVelocity")
+            if bv then bv:Destroy() end
+        end
+    end
+    SaveConfig()
+end)
+
+TabFarm:AddDropdown("Farm Position", { 
+    Options = { "Behind", "Above", "Below" },
+    Default = getgenv().Settings.FarmMode or "Above",
+    Flag = "FarmModeDrop"
+}, function(Value)
+    getgenv().Settings.FarmMode = Value
+    SaveConfig()
+end)
+
+TabFarm:AddSlider("Farm Distance", { Min = 0, Max = 40, Default = getgenv().Settings.FarmDistance, Increment = 1, Suffix = "Studs", Flag = "FarmDist" }, function(Value)
+    getgenv().Settings.FarmDistance = Value
+    SaveConfig()
+end)
+
+TabFarm:AddSlider("Farm Speed", { Min = 50, Max = 500, Default = getgenv().Settings.FarmSpeed or 300, Increment = 10, Suffix = "Studs/s", Flag = "FarmSpeed" }, function(Value)
+    getgenv().Settings.FarmSpeed = Value
+    SaveConfig()
+end)
+
+TabFarm:AddSection("Combat")
+
+local AttackToggle = TabFarm:AddToggle("Enable Auto Attack", { Default = getgenv().Settings.AutoAttack, Flag = "AttackFlag" }, function(Value)
+    getgenv().Settings.AutoAttack = Value
+    SaveConfig()
+end)
+
+local savedKey = Enum.KeyCode.T
+if getgenv().Settings.AttackKey and Enum.KeyCode[getgenv().Settings.AttackKey] then
+    savedKey = Enum.KeyCode[getgenv().Settings.AttackKey]
+end
+
+TabFarm:AddKeybind("Attack Toggle Key", { 
+    Default = savedKey, 
+    Mode = "Toggle",
+    Flag = "KeybindAttack" 
+}, function(Value)
+    getgenv().Settings.AutoAttack = not getgenv().Settings.AutoAttack
+    if AttackToggle.Set then AttackToggle:Set(getgenv().Settings.AutoAttack) end
+    SaveConfig()
+    UI.Notify({Title = "Attack", Subtitle = getgenv().Settings.AutoAttack and "ON" or "OFF", Duration = 1})
+end, function(NewKey)
+    getgenv().Settings.AttackKey = NewKey.Name
+    SaveConfig()
+end)
+
+TabFarm:AddSlider("Attack Delay", { Min = 0.05, Max = 1, Default = getgenv().Settings.AttackDelay or 0.1, Increment = 0.05, Suffix = "s", Flag = "AttDelay" }, function(Value)
+    getgenv().Settings.AttackDelay = Value
+    SaveConfig()
+end)
+
+TabFarm:AddSection("Extras") 
+
+TabFarm:AddToggle("Target ESP (Wallhack)", { Default = getgenv().Settings.TargetESP, Flag = "ESPFlag" }, function(Value)
+    getgenv().Settings.TargetESP = Value
+    SaveConfig()
+end)
+
+TabFarm:AddToggle("Auto Replay (Spam 10x)", { Default = getgenv().Settings.AutoReplay, Flag = "ReplayFlag" }, function(Value)
+    getgenv().Settings.AutoReplay = Value
+    SaveConfig()
+end)
+
+TabFarm:AddToggle("Panic Mode (Void Drop)", { Default = getgenv().Settings.PanicMode, Flag = "PanicFlag" }, function(Value)
+    getgenv().Settings.PanicMode = Value
+    SaveConfig()
+end)
+
+TabFarm:AddSlider("Panic Trigger HP", { Min = 10, Max = 1000, Default = getgenv().Settings.PanicThreshold, Increment = 10, Suffix = "HP", Flag = "PanicThr" }, function(Value)
+    getgenv().Settings.PanicThreshold = Value
+    SaveConfig()
+end)
+
+TabFarm:AddSlider("Panic Spin Speed", { Min = 0.1, Max = 5, Default = getgenv().Settings.PanicSpeed or 1.0, Increment = 0.1, Suffix = "x", Flag = "PanicSpd" }, function(Value)
+    getgenv().Settings.PanicSpeed = Value
+    SaveConfig()
+end)
+
+TabFarm:AddToggle("Auto Health", { Default = getgenv().Settings.AutoHealth, Flag = "HealthFlag" }, function(Value)
+    getgenv().Settings.AutoHealth = Value
+    SaveConfig()
+end)
+
+TabFarm:AddSlider("Auto Health Trigger HP", { Min = 10, Max = 1000, Default = getgenv().Settings.HealthThreshold, Increment = 10, Suffix = "HP", Flag = "HealthThr" }, function(Value)
+    getgenv().Settings.HealthThreshold = Value
+    SaveConfig()
+end)
+
+local TabSkills = Window:AddTab("Skills", UI.Icons.Settings or nil)
+TabSkills:AddSection("Skills Configuration")
+
+TabSkills:AddSlider("Skill Delay (Seconds)", { Min = 0.1, Max = 5, Default = getgenv().Settings.SkillDelay or 0.5, Increment = 0.1, Suffix = "s", Flag = "SkillDelay" }, function(Value)
+    getgenv().Settings.SkillDelay = Value
+    SaveConfig()
+end)
+
+TabSkills:AddSection("Skills Selection")
+TabSkills:AddToggle("Use Skill 1", { Default = getgenv().Settings.Skill1 }, function(v) getgenv().Settings.Skill1 = v; SaveConfig() end)
+TabSkills:AddToggle("Use Skill 2", { Default = getgenv().Settings.Skill2 }, function(v) getgenv().Settings.Skill2 = v; SaveConfig() end)
+TabSkills:AddToggle("Use Skill 3", { Default = getgenv().Settings.Skill3 }, function(v) getgenv().Settings.Skill3 = v; SaveConfig() end)
+TabSkills:AddToggle("Use Skill F", { Default = getgenv().Settings.SkillF }, function(v) getgenv().Settings.SkillF = v; SaveConfig() end)
+TabSkills:AddToggle("Use Skill G", { Default = getgenv().Settings.SkillG }, function(v) getgenv().Settings.SkillG = v; SaveConfig() end)
+TabSkills:AddToggle("Use Skill X", { Default = getgenv().Settings.SkillX }, function(v) getgenv().Settings.SkillX = v; SaveConfig() end)
+
+local MiscTab = Window:AddTab("Misc", UI.Icons.Misc or nil)
+MiscTab:AddSection("Utils")
+
+MiscTab:AddToggle("White Screen (GPU Saver)", { Default = false }, function(Value)
+    game:GetService("RunService"):Set3dRenderingEnabled(not Value)
+    if Value then UI.Notify({Title = "GPU Saver", Subtitle = "3D Rendering Disabled", Duration = 3}) end
+end)
+
+MiscTab:AddToggle("Anti-AFK", { Default = getgenv().Settings.AntiAFK, Flag = "AntiAFKFlag" }, function(Value)
+    getgenv().Settings.AntiAFK = Value
+    SaveConfig()
+end)
+
+MiscTab:AddSection("Configuration")
+
+MiscTab:AddButton("Save Config", function()
+    SaveConfig()
+    UI.Notify({Title = "Saved", Subtitle = "Done.", Duration = 2})
+end)
+
+MiscTab:AddDangerButton("Reset Config", function()
+    if isfile(ConfigFileName) then delfile(ConfigFileName) end
+    UI.Notify({Title = "Deleted", Subtitle = "Restart script.", Duration = 2})
+end)
+
+MiscTab:AddDangerButton("Close GUI", function() Window:Destroy() end)
+
+if IsMobile then
+    UI.FloatingButton({ 
+        Position = UDim2.new(0.5, -28, 0, 20), 
+        Size = 56, 
+        Icon = UI.Logos.XanBar, 
+        Label = "Menu", 
+        Draggable = true, 
+        Callback = function() Window:Toggle() end 
+    })
+else
+    MiscTab:AddParagraph("Info", "Press RightControl or Insert to open/close.")
+end
+
+UI.Success("Loaded", "Enjoy.")
