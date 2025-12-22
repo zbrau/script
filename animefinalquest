@@ -538,7 +538,7 @@ task.wait(1)
 
 local Window = UI.New({
     Title = "Auto Farm",
-    Subtitle = "Anime Quest",
+    Subtitle = "Anime Final Quest",
     Theme = "Default",
     Size = IsMobile and UDim2.new(0, 420, 0, 500) or UDim2.new(0, 480, 0, 420),
     ShowUserInfo = true,
